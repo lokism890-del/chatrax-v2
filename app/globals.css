@@ -1,0 +1,56 @@
+@import "tailwindcss";
+
+:root {
+  --background: #050505;
+  --foreground: #ededed;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: 'Inter', Arial, Helvetica, sans-serif;
+}
+
+/* ─── THE ULTIMATE AUTOFILL FIX ───────────────────────────── */
+/* Forces Chrome/Edge to keep the dark theme, hides white lines, and keeps text visible */
+input:-webkit-autofill,
+input:-webkit-autofill:hover, 
+input:-webkit-autofill:focus, 
+input:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 1000px #0c0c12 inset !important; /* Matches your glass container perfectly */
+  -webkit-text-fill-color: #ffffff !important; /* Keeps credentials visible */
+  caret-color: #ffffff !important;
+  border: none !important;
+  outline: none !important;
+  transition: background-color 5000s ease-in-out 0s;
+}
+
+/* Keep floating label orange when autofilled */
+input:-webkit-autofill ~ label {
+  color: #fb923c !important;
+}
+
+/* ─── KEYFRAMES ───────────────────────────────────────────── */
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes ping { 75%, 100% { transform: scale(2); opacity: 0; } }
+@keyframes float { 
+  0%, 100% { transform: translateY(0px) rotate(0deg); } 
+  25% { transform: translateY(-15px) rotate(2deg); } 
+  75% { transform: translateY(-5px) rotate(-2deg); } 
+}
+@keyframes orbit { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+@keyframes gradientShift { 
+  0% { background-position: 0% 50%; } 
+  50% { background-position: 100% 50%; } 
+  100% { background-position: 0% 50%; } 
+}
+@keyframes gridScan { from { background-position: 0 0; } to { background-position: 0 40px; } }
+@keyframes rotateGlow { 100% { transform: rotate(360deg); } }
+@keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
+@keyframes sweep { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+/* Fixes canvas blending issues */
+canvas.fixed { 
+  mix-blend-mode: screen; 
+  filter: drop-shadow(0 0 10px rgba(255, 107, 0, 0.2)); 
+}
