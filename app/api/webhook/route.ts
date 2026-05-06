@@ -18,7 +18,13 @@ const TWILIO_FROM = process.env.TWILIO_PHONE_NUMBER?.startsWith('whatsapp:')
 
 // Groq Fallback function using Llama 3
 async function generateWithGroq(prompt: string): Promise<string> {
-  const modelCandidates = ["llama3-8b-8192", "llama3-70b-8192", "mixtral-8x7b-32768"];
+  const configuredModel = process.env.GROQ_MODEL;
+  const modelCandidates = [
+    configuredModel,
+    "llama-3.1-8b-instant",
+    "llama-3.3-70b-versatile",
+    "llama3-70b-8192",
+  ].filter((model, index, arr): model is string => Boolean(model) && arr.indexOf(model) === index);
   let lastError: any;
 
   for (const modelName of modelCandidates) {
@@ -32,6 +38,10 @@ async function generateWithGroq(prompt: string): Promise<string> {
       return completion.choices[0]?.message?.content?.trim() || "SKIP";
     } catch (error: any) {
       lastError = error;
+      if (error?.error?.error?.code === "model_decommissioned") {
+        console.warn(`Groq model ${modelName} is decommissioned, trying next...`);
+        continue;
+      }
       console.warn(`Groq model ${modelName} failed, trying next...`);
     }
   }
