@@ -1,3 +1,7 @@
+export const dynamic = 'force-dynamic';
+export const fetchCache = 'force-no-store';
+export const revalidate = 0;
+
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import Groq from 'groq-sdk';
@@ -14,6 +18,13 @@ const twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_A
 const TWILIO_FROM = process.env.TWILIO_PHONE_NUMBER?.startsWith('whatsapp:') 
   ? process.env.TWILIO_PHONE_NUMBER 
   : `whatsapp:${process.env.TWILIO_PHONE_NUMBER}`;
+
+const noCacheHeaders = {
+  'Content-Type': 'text/xml',
+  'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+  'Pragma': 'no-cache',
+  'Expires': '0',
+};
 
 async function generateWithGroq(prompt: string): Promise<string> {
   const modelCandidates = ["llama-3.1-8b-instant", "llama-3.3-70b-versatile"];
@@ -43,113 +54,91 @@ export async function POST(request: Request) {
     const phoneNumber = rawFrom.replace('whatsapp:', '');
 
     // 1. Get Workspace
-    const { data: workspace } = await supabase.from('workspaces').select('id').limit(1).single();
-    if (!workspace) throw new Error("No workspace found");
+    const { data: workspace, error: wsError } = await supabase.from('workspaces').select('id').limit(1).maybeSingle();
+    const workspaceId = workspace ? workspace.id : null; 
 
-    // 2. FETCH CUSTOMER & LAST MESSAGE (FROM ANYONE)
-    let { data: customer } = await supabase.from('customers').select('*').eq('phone_number', phoneNumber).single();
-    
-    let minutesSinceLastActivity = 0;
-    if (customer) {
-      const { data: lastMsg } = await supabase
-        .from('messages')
-        .select('created_at')
-        .eq('customer_id', customer.id)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single();
-
-      if (lastMsg) {
-        const lastTime = new Date(lastMsg.created_at).getTime();
-        minutesSinceLastActivity = (new Date().getTime() - lastTime) / 60000;
-      }
-    }
+    // 2. Fetch Customer
+    let { data: customer, error: fetchCustError } = await supabase
+      .from('customers')
+      .select('*')
+      .eq('phone_number', phoneNumber)
+      .maybeSingle();
+      
+    if (fetchCustError) console.error("Customer Fetch Error:", fetchCustError);
 
     let currentStatus = customer?.status || 'NEW';
 
-    // ==========================================
-    // 3. SMART SESSION TIMEOUT (TEST MODE: 5 MIN)
-    // ==========================================
-    if (minutesSinceLastActivity > 5) {
-      console.log(`5-minute Session timeout for ${phoneNumber}. Resetting bot to NEW state.`);
-      currentStatus = 'NEW';
-    }
-
-    // Sync Customer state
+    // 3. Sync Customer state
     if (!customer) {
-      const { data: newCust } = await supabase.from('customers').insert({
+      const { data: newCust, error: insertError } = await supabase.from('customers').insert({
         phone_number: phoneNumber,
         status: currentStatus,
         last_message: body,
-        workspace_id: workspace.id,
+        workspace_id: workspaceId,
       }).select().single();
+      
+      if (insertError) {
+        await twilioClient.messages.create({ from: TWILIO_FROM, to: rawFrom, body: `⚠️ DB ERROR (Customer Insert): ${insertError.message}` });
+        return new NextResponse('<Response></Response>', { status: 200, headers: noCacheHeaders });
+      }
       customer = newCust;
     } else {
-      await supabase.from('customers')
+      const { error: updateError } = await supabase.from('customers')
         .update({ last_message: body, status: currentStatus })
         .eq('id', customer.id);
+        
+      if (updateError) {
+        await twilioClient.messages.create({ from: TWILIO_FROM, to: rawFrom, body: `⚠️ DB ERROR (Customer Update): ${updateError.message}` });
+        return new NextResponse('<Response></Response>', { status: 200, headers: noCacheHeaders });
+      }
     }
 
-    // Save incoming message
-    await supabase.from('messages').insert({
+    // 4. THE CULPRIT: Save incoming message to Messages table with aggressive error checking
+    const { error: messageInsertError } = await supabase.from('messages').insert({
       customer_id: customer.id,
       content: body,
       is_outbound: false
     });
 
-    const bodyLower = body.toLowerCase();
-
-    // ==========================================
-    // 4. INTENT-BASED HANDOFF
-    // ==========================================
-    const agentKeywords = ['agent', 'human', 'representative', 'operator', 'talk to someone', 'real person'];
-    const wantsAgent = agentKeywords.some(word => bodyLower.includes(word));
-
-    if (wantsAgent && currentStatus !== 'PENDING_AGENT') {
-      const handoffScript = "Assigning you to a human agent. Please hold on, someone will join the chat shortly. 👨‍💻";
-      await twilioClient.messages.create({ from: TWILIO_FROM, to: rawFrom, body: handoffScript });
-      
-      await supabase.from('customers')
-        .update({ last_message: `System: Agent requested`, status: 'PENDING_AGENT' })
-        .eq('id', customer.id);
-        
-      await supabase.from('messages').insert({ customer_id: customer.id, content: handoffScript, is_outbound: true });
-      return new NextResponse('<Response></Response>', { status: 200, headers: { 'Content-Type': 'text/xml' } });
+    // IF THIS FAILS, IT WILL TEXT YOU THE ERROR
+    if (messageInsertError) {
+      await twilioClient.messages.create({ 
+        from: TWILIO_FROM, 
+        to: rawFrom, 
+        body: `⚠️ DB ERROR (Message Save): ${messageInsertError.message}` 
+      });
+      return new NextResponse('<Response></Response>', { status: 200, headers: noCacheHeaders });
     }
 
-    // ==========================================
-    // 5. THE BOT MUTE LOCKOUT
-    // ==========================================
-    // Keeps bot silent while waiting for agent OR while agent is chatting
-    if (currentStatus === 'PENDING_AGENT' || currentStatus === 'HANDOFF') {
-      console.log(`Bot muted. Current status is ${currentStatus} for ${phoneNumber}.`);
-      return new NextResponse('<Response></Response>', { status: 200, headers: { 'Content-Type': 'text/xml' } });
-    }
-
-    // 6. SMART FILTER & GROQ AI LOGIC
+    // 5. AI Logic
     let aiResponse = "SKIP";
+    const bodyLower = body.toLowerCase();
     const keywords = ['price', 'how much', 'cost', 'pkr', 'delivery', 'time', 'days', 'return', 'exchange', 'discount'];
+    
     if (keywords.some(word => bodyLower.includes(word))) {
-      const prompt = `
-        You are a professional assistant. 
-        Pricing: 2500 PKR. Delivery: 3-5 days. Returns: 7 days.
-        Customer says: "${body}"
-        Reply with a short 1-sentence answer if it's about price/delivery/returns. Otherwise reply "SKIP".
-      `;
+      const prompt = `Pricing: 2500 PKR. Delivery: 3-5 days. Returns: 7 days. Customer says: "${body}" Reply with 1 sentence or SKIP.`;
       try { aiResponse = await generateWithGroq(prompt); } catch (e) { }
     }
 
-    // 7. Send AI Response
+    // 6. Send AI Response
     if (aiResponse !== "SKIP" && !aiResponse.includes("SKIP")) {
       await twilioClient.messages.create({ from: TWILIO_FROM, to: rawFrom, body: aiResponse });
       await supabase.from('customers').update({ last_message: `AI: ${aiResponse}` }).eq('id', customer.id);
       await supabase.from('messages').insert({ customer_id: customer.id, content: aiResponse, is_outbound: true });
     }
 
-    return new NextResponse('<Response></Response>', { status: 200, headers: { 'Content-Type': 'text/xml' } });
+    return new NextResponse('<Response></Response>', { status: 200, headers: noCacheHeaders });
 
-  } catch (error) {
-    console.error('Webhook Error:', error);
-    return new NextResponse('Error', { status: 500 });
+  } catch (error: any) {
+    console.error('❌ Critical Webhook Error:', error);
+    // Even critical code crashes will now text you
+    try {
+      const text = await request.text();
+      const params = new URLSearchParams(text);
+      const rawFrom = params.get('From') || '';
+      await twilioClient.messages.create({ from: TWILIO_FROM, to: rawFrom, body: `🚨 FATAL CODE CRASH: ${error.message}` });
+    } catch(e) {}
+    
+    return new NextResponse('Error', { status: 500, headers: noCacheHeaders });
   }
 }
