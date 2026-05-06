@@ -39,9 +39,9 @@ export async function POST(request: Request) {
       content: body,
       is_outbound: false
     });
-
-    // 3. AI GENERATION & AUTO-REPLY
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const model = genAI.getGenerativeModel({
+      model: process.env.GEMINI_MODEL || "gemini-1.5-flash",
+    });
     
     // Knowledge Base Prompt
     const prompt = `
