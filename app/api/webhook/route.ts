@@ -39,30 +39,35 @@ export async function POST(request: Request) {
     const rawFrom = params.get('From') || ''; 
     const phoneNumber = rawFrom.replace('whatsapp:', '');
 
-    console.log(`[Incoming] ${phoneNumber}: ${body}`);
-
     // 1. Get Workspace
     const { data: workspace } = await supabase.from('workspaces').select('id').limit(1).single();
     if (!workspace) throw new Error("No workspace found");
 
-    // 2. THE MASTER SYNC (UPSERT)
-    // This creates or updates the customer AND sets the last_message in one shot.
-    const { data: customer, error: customerError } = await supabase
+    // 2. CHECK & SYNC CUSTOMER
+    let { data: customer } = await supabase
       .from('customers')
-      .upsert(
-        {
-          phone_number: phoneNumber,
-          last_message: body,
-          status: 'NEW',
-          workspace_id: workspace.id,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'phone_number' }
-      )
-      .select()
+      .select('*')
+      .eq('phone_number', phoneNumber)
       .single();
 
-    if (customerError) throw customerError;
+    if (!customer) {
+      // Create brand new customer
+      const { data: newCust } = await supabase.from('customers').insert({
+        phone_number: phoneNumber,
+        status: 'NEW',
+        last_message: body,
+        workspace_id: workspace.id,
+      }).select().single();
+      customer = newCust;
+    } else {
+      // UPDATE existing customer to sync dashboard card
+      await supabase.from('customers')
+        .update({ 
+          last_message: body, 
+          status: 'NEW' 
+        })
+        .eq('id', customer.id);
+    }
 
     // 3. Save to Messages table (for Chat History)
     await supabase.from('messages').insert({
@@ -82,7 +87,9 @@ export async function POST(request: Request) {
     let aiResponse = "SKIP";
     try {
       aiResponse = await generateWithFallback(prompt);
-    } catch (e) {}
+    } catch (e) {
+      console.error("AI Quota hit, skipping auto-reply");
+    }
 
     // 5. Send & Log AI Response
     if (aiResponse !== "SKIP" && !aiResponse.includes("SKIP")) {
@@ -92,9 +99,9 @@ export async function POST(request: Request) {
         body: aiResponse
       });
 
-      // Update dashboard to show AI's reply as the 'last_message'
+      // Update dashboard again to show AI's response as the last message
       await supabase.from('customers')
-        .update({ last_message: `AI: ${aiResponse}`, updated_at: new Date().toISOString() })
+        .update({ last_message: `AI: ${aiResponse}` })
         .eq('id', customer.id);
 
       await supabase.from('messages').insert({
@@ -107,7 +114,7 @@ export async function POST(request: Request) {
     return new NextResponse('<Response></Response>', { status: 200, headers: { 'Content-Type': 'text/xml' } });
 
   } catch (error) {
-    console.error('Detailed Webhook Error:', error);
+    console.error('Webhook Error:', error);
     return new NextResponse('Error', { status: 500 });
   }
 }
