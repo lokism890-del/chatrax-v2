@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import { MessageSquare, ShieldCheck, X, Send, Phone, Clock, GripVertical, Trash2, Star, Activity, MessageCircle } from 'lucide-react';
+import { MessageSquare, ShieldCheck, X, Send, Phone, Clock, GripVertical, Trash2, Star, Activity, MessageCircle, AlertTriangle, UserCheck } from 'lucide-react';
 
 // ─── INITIALIZE SUPABASE ───────────────────────────────
 const supabase = createClient(
@@ -10,9 +10,11 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-// ─── MINIMAL 3-COLUMN CONFIG ───────────────────────────
+// ─── EXPANDED 5-COLUMN CONFIG FOR AI HANDOFF ───────────
 const COLUMN_CONFIG: Record<string, { icon: any, hex: string, twText: string, twBg: string }> = {
   'NEW': { icon: Phone, hex: '#06b6d4', twText: 'text-cyan-400', twBg: 'bg-cyan-500' },
+  'PENDING_AGENT': { icon: AlertTriangle, hex: '#ef4444', twText: 'text-red-400', twBg: 'bg-red-500' }, // 🚨 Needs Agent
+  'HANDOFF': { icon: UserCheck, hex: '#eab308', twText: 'text-yellow-400', twBg: 'bg-yellow-500' }, // 👨‍💻 Human Handling
   'ACTIVE': { icon: Activity, hex: '#a855f7', twText: 'text-purple-400', twBg: 'bg-purple-500' },
   'RESOLVED': { icon: ShieldCheck, hex: '#84cc16', twText: 'text-lime-400', twBg: 'bg-lime-500' }
 };
@@ -134,9 +136,10 @@ export default function Dashboard() {
       });
       if (msgError) throw msgError;
 
+      // If an agent sends a message from NEW or PENDING_AGENT, automatically assume they are taking over
       let newStatus = selectedLead.status;
-      if (selectedLead.status === 'NEW') {
-        newStatus = 'ACTIVE';
+      if (selectedLead.status === 'NEW' || selectedLead.status === 'PENDING_AGENT') {
+        newStatus = 'HANDOFF';
       }
 
       const { error: custError } = await supabase
@@ -159,26 +162,29 @@ export default function Dashboard() {
       console.error("Critical Send Error:", error.message);
     }
   };
+
+  // ─── NEW: ONE-CLICK TAKE OVER LOGIC ───
+  const handleTakeOver = async (id: string) => {
+    setLeads((prev) => prev.map(lead => lead.id === id ? { ...lead, status: 'HANDOFF' } : lead));
+    if (selectedLead) setSelectedLead({ ...selectedLead, status: 'HANDOFF' });
+    try {
+      await supabase.from('customers').update({ status: 'HANDOFF' }).eq('id', id);
+    } catch (error) {
+      console.error("Failed to take over:", error);
+    }
+  };
+
   // ─── ONE-CLICK RESOLVE LOGIC ───
   const handleResolveChat = async (id: string) => {
-    // 1. Instantly update the UI so it feels lightning fast
-    setLeads((prev) => prev.map(lead => 
-      lead.id === id ? { ...lead, status: 'RESOLVED' } : lead
-    ));
-
-    // 2. Slide the chat panel closed
+    setLeads((prev) => prev.map(lead => lead.id === id ? { ...lead, status: 'RESOLVED' } : lead));
     setSelectedLead(null);
-
-    // 3. Update the Supabase database in the background
     try {
-      await supabase
-        .from('customers')
-        .update({ status: 'RESOLVED' })
-        .eq('id', id);
+      await supabase.from('customers').update({ status: 'RESOLVED' }).eq('id', id);
     } catch (error) {
       console.error("Failed to resolve:", error);
     }
   };
+
   return (
     <div className="min-h-screen bg-[#0a0a0f] text-zinc-300 p-6 md:p-10 font-sans relative overflow-x-hidden selection:bg-cyan-500/30">
       
@@ -195,8 +201,8 @@ export default function Dashboard() {
           <p className="text-zinc-400 mt-2 text-sm font-medium tracking-wide drop-shadow-md">Manage and track your incoming WhatsApp conversations.</p>
         </div>
 
-        {/* 3-COLUMN GRID */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 w-full flex-1 pb-8 items-start">
+        {/* 5-COLUMN KANBAN GRID (Now handles PENDING_AGENT and HANDOFF dynamically) */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6 w-full flex-1 pb-8 items-start">
           {COLUMNS.map((status, index) => {
             const config = COLUMN_CONFIG[status];
             const ColumnIcon = config.icon;
@@ -208,7 +214,7 @@ export default function Dashboard() {
                 onDragOver={handleDragOver} 
                 onDrop={(e) => handleDrop(e, status)}
                 className={`flex flex-col gap-4 h-full relative group transition-all duration-700 ease-out transform ${isMounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-12'}`}
-                style={{ transitionDelay: `${index * 150}ms` }}
+                style={{ transitionDelay: `${index * 100}ms` }}
               >
                 {/* Column Ambient Light Pillar */}
                 <div 
@@ -221,7 +227,7 @@ export default function Dashboard() {
 
                 {/* 1. Header Title & Badge */}
                 <div className="flex items-center justify-between px-2">
-                  <h2 className="text-xs font-bold tracking-[0.2em] text-white uppercase drop-shadow-[0_0_5px_rgba(255,255,255,0.5)]">{status}</h2>
+                  <h2 className="text-xs font-bold tracking-[0.2em] text-white uppercase drop-shadow-[0_0_5px_rgba(255,255,255,0.5)]">{status.replace('_', ' ')}</h2>
                   <span className={`text-[10px] font-bold text-white ${config.twBg} bg-opacity-30 px-2.5 py-0.5 rounded-full border border-${config.hex}/50 backdrop-blur-md shadow-[0_0_12px_${config.hex}50]`}>
                     {colLeads.length}
                   </span>
@@ -286,9 +292,11 @@ export default function Dashboard() {
                         </p>
                       </div>
 
-                      <div className="mt-4 flex items-center gap-1.5 text-[10px] uppercase tracking-widest text-zinc-500 font-bold pl-2">
-                        <Clock className="w-3 h-3" />
-                        {new Date(lead.created_at).toLocaleDateString()}
+                      <div className="mt-4 flex items-center justify-between text-[10px] uppercase tracking-widest text-zinc-500 font-bold pl-2">
+                        <div className="flex items-center gap-1.5">
+                          <Clock className="w-3 h-3" />
+                          {new Date(lead.created_at).toLocaleDateString()}
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -330,6 +338,17 @@ export default function Dashboard() {
               </div>
             {/* NEW Action Buttons Container */}
             <div className="flex items-center gap-3 relative z-10">
+                {/* Glowing Take Over Button for Pending Agents */}
+                {selectedLead.status === 'PENDING_AGENT' && (
+                  <button 
+                    onClick={() => handleTakeOver(selectedLead.id)}
+                    className="group flex items-center gap-1.5 px-4 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 hover:border-red-400 rounded-full transition-all duration-300 shadow-[0_0_15px_rgba(239,68,68,0.1)] hover:shadow-[0_0_20px_rgba(239,68,68,0.4)]"
+                  >
+                    <UserCheck className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                    <span className="text-xs font-bold tracking-widest uppercase">Take Over</span>
+                  </button>
+                )}
+
                 {/* Glowing Resolve Button */}
                 <button 
                   onClick={() => handleResolveChat(selectedLead.id)}
