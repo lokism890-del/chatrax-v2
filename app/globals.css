@@ -3,12 +3,6 @@
 :root {
   --background: #050505;
   --foreground: #ededed;
-  /* Must match login input wrapper: rgba(10, 10, 15, 0.8) → solid fill for autofill mask */
-  --input-fill: #0a0a0f;
-}
-
-html {
-  color-scheme: dark;
 }
 
 body {
@@ -17,40 +11,23 @@ body {
   font-family: 'Inter', Arial, Helvetica, sans-serif;
 }
 
-/* Dark native controls + fewer flashes on password/email fields */
-input,
-textarea,
-select {
-  color-scheme: dark;
-}
-
-/*
-  Single autofill fix (no duplicate blocks — duplicates were causing grey flicker).
-  Chrome applies a pale/yellow layer; we mask it with an inset shadow matching the field bg.
-*/
+/* ─── THE ULTIMATE AUTOFILL FIX ───────────────────────────── */
+/* Forces Chrome/Edge to keep the dark theme, hides white lines, and keeps text visible */
 input:-webkit-autofill,
-input:-webkit-autofill:hover,
-input:-webkit-autofill:focus,
+input:-webkit-autofill:hover, 
+input:-webkit-autofill:focus, 
 input:-webkit-autofill:active {
-  -webkit-text-fill-color: #ffffff !important;
+  -webkit-box-shadow: 0 0 0 1000px #0c0c12 inset !important; /* Matches your glass container perfectly */
+  -webkit-text-fill-color: #ffffff !important; /* Keeps credentials visible */
   caret-color: #ffffff !important;
   border: none !important;
   outline: none !important;
-  box-shadow: 0 0 0 1000px var(--input-fill) inset !important;
-  -webkit-box-shadow: 0 0 0 1000px var(--input-fill) inset !important;
-  /* Long delay prevents Chrome from animating its default fill (major flicker source) */
-  transition: background-color 99999s ease-out 0s !important;
+  transition: background-color 5000s ease-in-out 0s;
 }
 
+/* Keep floating label orange when autofilled */
 input:-webkit-autofill ~ label {
   color: #fb923c !important;
-}
-
-/* Firefox autofill (reduces yellow/grey highlight flash) */
-input:-moz-autofill {
-  filter: none;
-  background-color: var(--input-fill) !important;
-  color: #ffffff !important;
 }
 
 /* ─── KEYFRAMES ───────────────────────────────────────────── */
