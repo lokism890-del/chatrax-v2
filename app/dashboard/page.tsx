@@ -8,7 +8,8 @@ import {
   Trash2, Activity, MessageCircle, UserCheck, 
   StickyNote, User, Download, ShoppingBag, Loader2,
   LayoutDashboard, LayoutTemplate, BarChart2, Settings, 
-  TrendingUp, Search, Calendar, Plus, Star // <-- Added Star icon here
+  TrendingUp, Search, Calendar, Plus, Star, Zap,
+  Copy, Check // <-- Added new icons for copying
 } from 'lucide-react';
 import { jsPDF } from "jspdf";
 
@@ -101,6 +102,10 @@ const COLUMNS = Object.keys(COLUMN_CONFIG);
 export default function Dashboard() {
   const router = useRouter();
   const [isMounted, setIsMounted] = useState(false);
+  
+  // ─── VIEW NAVIGATION STATE ───
+  const [activeView, setActiveView] = useState<'dashboard' | 'templates'>('dashboard');
+
   const [leads, setLeads] = useState<any[]>([]);
   const [totalSent, setTotalSent] = useState(0);
   const [draggedLead, setDraggedLead] = useState<string | null>(null);
@@ -113,9 +118,15 @@ export default function Dashboard() {
 
   const [shopifyData, setShopifyData] = useState<any | null>(null);
   const [loadingShopify, setLoadingShopify] = useState(false);
-  
-  // New State for Starred Leads
   const [starredLeads, setStarredLeads] = useState<Set<string>>(new Set());
+
+  // ─── QUICK REPLIES STATE ───
+  const [quickReplies, setQuickReplies] = useState<{id: string, shortcut: string, content: string}[]>([]);
+  const [showCommandMenu, setShowCommandMenu] = useState(false);
+  const [commandQuery, setCommandQuery] = useState('');
+  const [newShortcut, setNewShortcut] = useState('');
+  const [newTemplateContent, setNewTemplateContent] = useState('');
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -135,6 +146,7 @@ export default function Dashboard() {
   useEffect(() => {
     fetchLeads();
     fetchStats();
+    fetchQuickReplies();
     const channel = supabase.channel('realtime-customers')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'customers' }, () => fetchLeads())
       .subscribe();
@@ -144,6 +156,11 @@ export default function Dashboard() {
   const fetchStats = async () => {
     const { count } = await supabase.from('messages').select('*', { count: 'exact', head: true }).eq('is_outbound', true);
     setTotalSent(count || 0);
+  };
+
+  const fetchQuickReplies = async () => {
+    const { data } = await supabase.from('quick_replies').select('*').order('created_at', { ascending: false });
+    if (data) setQuickReplies(data);
   };
 
   useEffect(() => {
@@ -203,6 +220,26 @@ export default function Dashboard() {
     fetchLeads();
   };
 
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    setNewMessage(val);
+
+    const lastWord = val.split(' ').pop() || '';
+    if (lastWord.startsWith('/')) {
+      setShowCommandMenu(true);
+      setCommandQuery(lastWord.substring(1).toLowerCase());
+    } else {
+      setShowCommandMenu(false);
+    }
+  };
+
+  const insertQuickReply = (content: string) => {
+    const words = newMessage.split(' ');
+    words.pop(); 
+    setNewMessage((words.join(' ') + (words.length > 0 ? ' ' : '') + content + ' ').trimStart());
+    setShowCommandMenu(false);
+  };
+
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMessage.trim() || !selectedLead) return;
@@ -211,6 +248,7 @@ export default function Dashboard() {
     const internalStatus = isInternal;
     setNewMessage(''); 
     setIsInternal(false);
+    setShowCommandMenu(false);
 
     try {
       await supabase.from('messages').insert({
@@ -222,24 +260,50 @@ export default function Dashboard() {
     } catch (err) { console.error(err); }
   };
 
+  // ─── TEMPLATE MANAGEMENT LOGIC ───
+  const handleAddTemplate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newShortcut.trim() || !newTemplateContent.trim()) return;
+    
+    try {
+      const cleanShortcut = newShortcut.replace('/', '').trim().toLowerCase();
+      const { data, error } = await supabase
+        .from('quick_replies')
+        .insert([{ shortcut: cleanShortcut, content: newTemplateContent.trim() }])
+        .select();
+
+      if (!error && data) {
+        setQuickReplies([data[0], ...quickReplies]);
+        setNewShortcut('');
+        setNewTemplateContent('');
+      }
+    } catch (err) { console.error("Error adding template:", err); }
+  };
+
+  const handleDeleteTemplate = async (id: string) => {
+    if (!window.confirm("Delete this template permanently?")) return;
+    try {
+      await supabase.from('quick_replies').delete().eq('id', id);
+      setQuickReplies(quickReplies.filter(q => q.id !== id));
+    } catch (err) { console.error("Error deleting template:", err); }
+  };
+
+  const handleCopyTemplate = (id: string, content: string) => {
+    navigator.clipboard.writeText(content);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
   const handleDeleteMemo = async (memoId: string) => {
-    try { await supabase.from('messages').delete().eq('id', memoId); setMessages(prev => prev.filter(m => m.id !== memoId)); } 
+    try { 
+      await supabase.from('messages').delete().eq('id', memoId); 
+      setMessages(prev => prev.filter(m => m.id !== memoId)); 
+    } 
     catch (err) { console.error("Error deleting memo:", err); }
   };
 
-  // NEW: Delete an individual chat message
-  const handleDeleteMessage = async (msgId: string) => {
-    if (!window.confirm("Delete this message from the system?")) return;
-    try { 
-      await supabase.from('messages').delete().eq('id', msgId); 
-      setMessages(prev => prev.filter(m => m.id !== msgId)); 
-    } 
-    catch (err) { console.error("Error deleting message:", err); }
-  };
-
-  // NEW: Delete an entire lead/conversation card
   const handleDeleteLead = async (e: React.MouseEvent, id: string) => {
-    e.stopPropagation(); // Prevents the card from opening when you click delete
+    e.stopPropagation();
     if (!window.confirm('Are you sure you want to completely delete this lead and their conversation?')) return;
     try {
       await supabase.from('customers').delete().eq('id', id);
@@ -248,9 +312,8 @@ export default function Dashboard() {
     } catch (err) { console.error("Error deleting lead:", err); }
   };
 
-  // NEW: Toggle Star on a card
   const toggleStar = (e: React.MouseEvent, id: string) => {
-    e.stopPropagation(); // Prevents the card from opening when you click star
+    e.stopPropagation();
     setStarredLeads(prev => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -304,6 +367,8 @@ export default function Dashboard() {
   const activeCount = leads.filter(l => l.status === 'ACTIVE').length;
   const resolvedCount = leads.filter(l => l.status === 'RESOLVED').length;
 
+  const filteredReplies = quickReplies.filter(r => r.shortcut.toLowerCase().includes(commandQuery));
+
   return (
     <div className="flex h-screen text-zinc-100 font-sans relative overflow-hidden selection:bg-emerald-500/30">
       <div className="fixed inset-0 -z-50 bg-gradient-to-br from-[#0F172A] via-[#1E293B] to-[#0F172A]" />
@@ -333,16 +398,27 @@ export default function Dashboard() {
         </div>
         
         <div className="flex-1 py-6 px-4 space-y-2">
-          <button className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-white/10 text-emerald-400 border border-white/10 shadow-inner transition-all duration-300 font-semibold text-sm">
+          {/* Dashboard Button */}
+          <button 
+             onClick={() => setActiveView('dashboard')}
+             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 font-semibold text-sm ${activeView === 'dashboard' ? 'bg-white/10 text-emerald-400 border border-white/10 shadow-inner' : 'text-zinc-300 hover:bg-white/5 hover:text-white'}`}
+          >
              <LayoutDashboard className="w-4 h-4" /> Dashboard
           </button>
+
           <button className="w-full flex items-center justify-between px-4 py-3 rounded-xl text-zinc-300 hover:bg-white/5 hover:text-white transition-all duration-300 font-medium text-sm">
              <div className="flex items-center gap-3"><MessageSquare className="w-4 h-4" /> Conversations</div>
              <span className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px] px-2 py-0.5 rounded-full font-bold">{leads.length}</span>
           </button>
-          <button className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-zinc-300 hover:bg-white/5 hover:text-white transition-all duration-300 font-medium text-sm">
+
+          {/* Templates Button */}
+          <button 
+             onClick={() => setActiveView('templates')}
+             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 font-semibold text-sm ${activeView === 'templates' ? 'bg-white/10 text-emerald-400 border border-white/10 shadow-inner' : 'text-zinc-300 hover:bg-white/5 hover:text-white'}`}
+          >
              <LayoutTemplate className="w-4 h-4" /> Templates
           </button>
+
           <button className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-zinc-300 hover:bg-white/5 hover:text-white transition-all duration-300 font-medium text-sm">
              <BarChart2 className="w-4 h-4" /> Analytics
           </button>
@@ -367,143 +443,224 @@ export default function Dashboard() {
       {/* ─── MAIN CONTENT AREA ─── */}
       <div className="flex-1 flex flex-col h-full overflow-hidden relative z-30">
         
-        {/* TOP HEADER */}
-        <div className="h-20 flex items-center justify-between px-8 border-b border-white/10 bg-[#111827]/80 backdrop-blur-xl shrink-0">
-          <div>
-            <h2 className="text-xl font-bold text-white drop-shadow-md">Command Center</h2>
-            <p className="text-xs text-zinc-400 font-medium tracking-wide mt-0.5">Live overview of your Store & CRM activity</p>
-          </div>
-          <div className="flex items-center gap-4">
-             <div className="flex items-center gap-2 bg-[#1F2937] border border-white/10 rounded-lg px-4 py-2 text-sm font-medium text-zinc-200 shadow-inner cursor-pointer hover:bg-[#374151] transition-colors">
-                <Calendar className="w-4 h-4 text-emerald-400" /> Real-time Activity
-             </div>
-             <button className="bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-white font-semibold text-sm px-5 py-2 rounded-lg shadow-[0_0_20px_rgba(16,185,129,0.3)] hover:shadow-[0_0_25px_rgba(16,185,129,0.5)] transition-all flex items-center gap-2 hover:-translate-y-0.5 active:translate-y-0">
-                <Plus className="w-4 h-4" /> New Campaign
-             </button>
-          </div>
-        </div>
-
-        {/* SCROLLABLE DASHBOARD BODY */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar p-8">
-            
-            {/* ─── KPI STAT CARDS ─── */}
-            <div className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8 transition-all duration-1000 transform ${isMounted ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4'}`}>
-              
-              {/* Card 1: New Orders */}
-              <div className="bg-[#1F2937]/70 backdrop-blur-2xl border border-white/10 rounded-2xl p-6 shadow-xl relative overflow-hidden group hover:bg-[#1F2937]/90 transition-colors">
-                 <div className="absolute top-0 left-0 w-1.5 h-full bg-emerald-500 shadow-[0_0_20px_rgba(16,185,129,0.8)]" />
-                 <div className="flex justify-between items-start mb-4 pl-2">
-                    <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 group-hover:scale-110 transition-transform"><ShoppingBag className="w-5 h-5"/></div>
-                    <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-1 rounded-full flex items-center gap-1"><TrendingUp className="w-3 h-3"/> +12%</span>
-                 </div>
-                 <p className="text-[11px] font-semibold tracking-widest text-zinc-400 uppercase mb-1 pl-2">New Orders</p>
-                 <h3 className="text-3xl font-bold text-white tracking-tight drop-shadow-sm pl-2 mt-1">{newOrdersCount}</h3>
+        {/* VIEW: DASHBOARD */}
+        {activeView === 'dashboard' && (
+          <>
+            {/* TOP HEADER */}
+            <div className="h-20 flex items-center justify-between px-8 border-b border-white/10 bg-[#111827]/80 backdrop-blur-xl shrink-0">
+              <div>
+                <h2 className="text-xl font-bold text-white drop-shadow-md">Command Center</h2>
+                <p className="text-xs text-zinc-400 font-medium tracking-wide mt-0.5">Live overview of your Store & CRM activity</p>
               </div>
-
-              {/* Card 2: Active */}
-              <div className="bg-[#1F2937]/70 backdrop-blur-2xl border border-white/10 rounded-2xl p-6 shadow-xl relative overflow-hidden group hover:bg-[#1F2937]/90 transition-colors">
-                 <div className="absolute top-0 left-0 w-1.5 h-full bg-sky-500 shadow-[0_0_20px_rgba(14,165,233,0.8)]" />
-                 <div className="flex justify-between items-start mb-4 pl-2">
-                    <div className="w-10 h-10 rounded-xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-400 group-hover:scale-110 transition-transform"><Activity className="w-5 h-5"/></div>
-                    <span className="text-[10px] font-bold text-sky-400 bg-sky-500/10 border border-sky-500/20 px-2 py-1 rounded-full flex items-center gap-1"><TrendingUp className="w-3 h-3"/> +8%</span>
+              <div className="flex items-center gap-4">
+                 <div className="flex items-center gap-2 bg-[#1F2937] border border-white/10 rounded-lg px-4 py-2 text-sm font-medium text-zinc-200 shadow-inner cursor-pointer hover:bg-[#374151] transition-colors">
+                    <Calendar className="w-4 h-4 text-emerald-400" /> Real-time Activity
                  </div>
-                 <p className="text-[11px] font-semibold tracking-widest text-zinc-400 uppercase mb-1 pl-2">Active Contacts</p>
-                 <h3 className="text-3xl font-bold text-white tracking-tight drop-shadow-sm pl-2 mt-1">{activeCount}</h3>
+                 <button className="bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-white font-semibold text-sm px-5 py-2 rounded-lg shadow-[0_0_20px_rgba(16,185,129,0.3)] hover:shadow-[0_0_25px_rgba(16,185,129,0.5)] transition-all flex items-center gap-2 hover:-translate-y-0.5 active:translate-y-0">
+                    <Plus className="w-4 h-4" /> New Campaign
+                 </button>
               </div>
-
-              {/* Card 3: Resolved */}
-              <div className="bg-[#1F2937]/70 backdrop-blur-2xl border border-white/10 rounded-2xl p-6 shadow-xl relative overflow-hidden group hover:bg-[#1F2937]/90 transition-colors">
-                 <div className="absolute top-0 left-0 w-1.5 h-full bg-lime-500 shadow-[0_0_20px_rgba(132,204,22,0.8)]" />
-                 <div className="flex justify-between items-start mb-4 pl-2">
-                    <div className="w-10 h-10 rounded-xl bg-lime-500/10 border border-lime-500/20 flex items-center justify-center text-lime-400 group-hover:scale-110 transition-transform"><ShieldCheck className="w-5 h-5"/></div>
-                    <span className="text-[10px] font-bold text-lime-400 bg-lime-500/10 border border-lime-500/20 px-2 py-1 rounded-full flex items-center gap-1"><TrendingUp className="w-3 h-3"/> +15%</span>
-                 </div>
-                 <p className="text-[11px] font-semibold tracking-widest text-zinc-400 uppercase mb-1 pl-2">Resolved Leads</p>
-                 <h3 className="text-3xl font-bold text-white tracking-tight drop-shadow-sm pl-2 mt-1">{resolvedCount}</h3>
-              </div>
-
-              {/* Card 4: Messages Sent */}
-              <div className="bg-[#1F2937]/70 backdrop-blur-2xl border border-white/10 rounded-2xl p-6 shadow-xl relative overflow-hidden group hover:bg-[#1F2937]/90 transition-colors">
-                 <div className="absolute top-0 left-0 w-1.5 h-full bg-amber-500 shadow-[0_0_20px_rgba(245,158,11,0.8)]" />
-                 <div className="flex justify-between items-start mb-4 pl-2">
-                    <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 group-hover:scale-110 transition-transform"><Send className="w-5 h-5 ml-0.5"/></div>
-                    <span className="text-[10px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-1 rounded-full flex items-center gap-1"><TrendingUp className="w-3 h-3"/> Steady</span>
-                 </div>
-                 <p className="text-[11px] font-semibold tracking-widest text-zinc-400 uppercase mb-1 pl-2">Messages Sent</p>
-                 <h3 className="text-3xl font-bold text-white tracking-tight drop-shadow-sm pl-2 mt-1">{totalSent}</h3>
-              </div>
-
             </div>
 
-            {/* ─── ACTION BOARD (KANBAN) ─── */}
-            <div className="bg-[#111827]/60 backdrop-blur-xl border border-white/10 rounded-3xl p-6 shadow-2xl">
-              <div className="flex items-center justify-between mb-6 px-2">
-                 <h3 className="text-lg font-bold text-white drop-shadow-sm">Live Action Board</h3>
-                 <div className="flex gap-2">
-                    <div className="bg-[#1F2937] border border-white/10 hover:bg-[#374151] cursor-pointer transition-colors rounded-lg px-4 py-2 flex items-center gap-2 text-xs font-semibold text-zinc-300"><Search className="w-3.5 h-3.5 text-zinc-400"/> Filter</div>
-                 </div>
-              </div>
+            {/* SCROLLABLE DASHBOARD BODY */}
+            <div className="flex-1 overflow-y-auto custom-scrollbar p-8 animate-[fade-in_0.3s_ease-out]">
+                
+                {/* ─── KPI STAT CARDS ─── */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                  <div className="bg-[#1F2937]/70 backdrop-blur-2xl border border-white/10 rounded-2xl p-6 shadow-xl relative overflow-hidden group hover:bg-[#1F2937]/90 transition-colors">
+                     <div className="absolute top-0 left-0 w-1.5 h-full bg-emerald-500 shadow-[0_0_20px_rgba(16,185,129,0.8)]" />
+                     <div className="flex justify-between items-start mb-4 pl-2">
+                        <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 group-hover:scale-110 transition-transform"><ShoppingBag className="w-5 h-5"/></div>
+                        <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-1 rounded-full flex items-center gap-1"><TrendingUp className="w-3 h-3"/> +12%</span>
+                     </div>
+                     <p className="text-[11px] font-semibold tracking-widest text-zinc-400 uppercase mb-1 pl-2">New Orders</p>
+                     <h3 className="text-3xl font-bold text-white tracking-tight drop-shadow-sm pl-2 mt-1">{newOrdersCount}</h3>
+                  </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
-                {COLUMNS.map((status, index) => {
-                  const config = COLUMN_CONFIG[status];
-                  const ColumnIcon = config.icon;
-                  const colLeads = leads.filter(l => l.status === status);
+                  <div className="bg-[#1F2937]/70 backdrop-blur-2xl border border-white/10 rounded-2xl p-6 shadow-xl relative overflow-hidden group hover:bg-[#1F2937]/90 transition-colors">
+                     <div className="absolute top-0 left-0 w-1.5 h-full bg-sky-500 shadow-[0_0_20px_rgba(14,165,233,0.8)]" />
+                     <div className="flex justify-between items-start mb-4 pl-2">
+                        <div className="w-10 h-10 rounded-xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-400 group-hover:scale-110 transition-transform"><Activity className="w-5 h-5"/></div>
+                        <span className="text-[10px] font-bold text-sky-400 bg-sky-500/10 border border-sky-500/20 px-2 py-1 rounded-full flex items-center gap-1"><TrendingUp className="w-3 h-3"/> +8%</span>
+                     </div>
+                     <p className="text-[11px] font-semibold tracking-widest text-zinc-400 uppercase mb-1 pl-2">Active Contacts</p>
+                     <h3 className="text-3xl font-bold text-white tracking-tight drop-shadow-sm pl-2 mt-1">{activeCount}</h3>
+                  </div>
 
-                  return (
-                    <div key={status} onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, status)}
-                      className={`flex flex-col gap-4 h-full relative group transition-all duration-700 ease-out transform ${isMounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-12'}`} style={{ transitionDelay: `${index * 100}ms` }}>
-                      
-                      <div className="flex items-center justify-between p-4 rounded-xl border border-white/10 transition-all duration-500 relative overflow-hidden shadow-md bg-[#1F2937]/80 backdrop-blur-md">
-                        <div className="flex items-center gap-2.5">
-                           <ColumnIcon className="w-4 h-4" style={{ color: config.hex, filter: `drop-shadow(0 0 5px ${config.hex})` }} />
-                           <h2 className="text-xs font-bold tracking-widest text-white uppercase">{status.replace('_', ' ')}</h2>
-                        </div>
-                        <span className={`text-[10px] font-bold text-white ${config.twBg} bg-opacity-20 px-2.5 py-0.5 rounded-full border border-${config.hex}/30`}>{colLeads.length}</span>
-                      </div>
+                  <div className="bg-[#1F2937]/70 backdrop-blur-2xl border border-white/10 rounded-2xl p-6 shadow-xl relative overflow-hidden group hover:bg-[#1F2937]/90 transition-colors">
+                     <div className="absolute top-0 left-0 w-1.5 h-full bg-lime-500 shadow-[0_0_20px_rgba(132,204,22,0.8)]" />
+                     <div className="flex justify-between items-start mb-4 pl-2">
+                        <div className="w-10 h-10 rounded-xl bg-lime-500/10 border border-lime-500/20 flex items-center justify-center text-lime-400 group-hover:scale-110 transition-transform"><ShieldCheck className="w-5 h-5"/></div>
+                        <span className="text-[10px] font-bold text-lime-400 bg-lime-500/10 border border-lime-500/20 px-2 py-1 rounded-full flex items-center gap-1"><TrendingUp className="w-3 h-3"/> +15%</span>
+                     </div>
+                     <p className="text-[11px] font-semibold tracking-widest text-zinc-400 uppercase mb-1 pl-2">Resolved Leads</p>
+                     <h3 className="text-3xl font-bold text-white tracking-tight drop-shadow-sm pl-2 mt-1">{resolvedCount}</h3>
+                  </div>
 
-                      <div className={`flex flex-col gap-3 min-h-[40vh] rounded-xl p-1.5 transition-all duration-300 custom-scrollbar ${draggedLead ? 'bg-white/5 border border-dashed border-white/20' : 'border border-transparent'}`}>
-                        {colLeads.map((lead) => (
-                          <div key={lead.id} draggable onDragStart={(e) => handleDragStart(e, lead.id)} onClick={() => setSelectedLead(lead)} 
-                            className={`group/card relative bg-[#374151]/60 backdrop-blur-md border border-white/10 rounded-xl p-4 cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_10px_30px_rgba(0,0,0,0.4)] hover:bg-[#4B5563]/60 hover:border-white/20 overflow-hidden`}>
-                            <div className={`absolute left-0 top-0 bottom-0 w-1 transition-all duration-300 group-hover/card:w-1.5`} style={{ backgroundColor: config.hex, boxShadow: `0 0 15px ${config.hex}` }} />
-                            
-                            {/* NEW: QUICK ACTION BUTTONS (HOVER TO SEE) */}
-                            <div className="absolute top-3 right-3 flex items-center gap-1.5 opacity-0 group-hover/card:opacity-100 transition-opacity duration-300 z-20">
-                               <button onClick={(e) => toggleStar(e, lead.id)} className="p-1.5 bg-[#111827]/60 hover:bg-[#1F2937] rounded-md transition-colors text-zinc-400 hover:text-amber-400 border border-white/5 hover:border-amber-500/30" title="Star Lead">
-                                 <Star className={`w-3.5 h-3.5 ${starredLeads.has(lead.id) ? 'fill-amber-400 text-amber-400' : ''}`} />
-                               </button>
-                               <button onClick={(e) => handleDeleteLead(e, lead.id)} className="p-1.5 bg-[#111827]/60 hover:bg-red-500/20 rounded-md transition-colors text-zinc-400 hover:text-red-400 border border-white/5 hover:border-red-500/30" title="Delete Conversation">
-                                 <Trash2 className="w-3.5 h-3.5" />
-                               </button>
+                  <div className="bg-[#1F2937]/70 backdrop-blur-2xl border border-white/10 rounded-2xl p-6 shadow-xl relative overflow-hidden group hover:bg-[#1F2937]/90 transition-colors">
+                     <div className="absolute top-0 left-0 w-1.5 h-full bg-amber-500 shadow-[0_0_20px_rgba(245,158,11,0.8)]" />
+                     <div className="flex justify-between items-start mb-4 pl-2">
+                        <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 group-hover:scale-110 transition-transform"><Send className="w-5 h-5 ml-0.5"/></div>
+                        <span className="text-[10px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-1 rounded-full flex items-center gap-1"><TrendingUp className="w-3 h-3"/> Steady</span>
+                     </div>
+                     <p className="text-[11px] font-semibold tracking-widest text-zinc-400 uppercase mb-1 pl-2">Messages Sent</p>
+                     <h3 className="text-3xl font-bold text-white tracking-tight drop-shadow-sm pl-2 mt-1">{totalSent}</h3>
+                  </div>
+                </div>
+
+                {/* ─── ACTION BOARD (KANBAN) ─── */}
+                <div className="bg-[#111827]/60 backdrop-blur-xl border border-white/10 rounded-3xl p-6 shadow-2xl">
+                  <div className="flex items-center justify-between mb-6 px-2">
+                     <h3 className="text-lg font-bold text-white drop-shadow-sm">Live Action Board</h3>
+                     <div className="flex gap-2">
+                        <div className="bg-[#1F2937] border border-white/10 hover:bg-[#374151] cursor-pointer transition-colors rounded-lg px-4 py-2 flex items-center gap-2 text-xs font-semibold text-zinc-300"><Search className="w-3.5 h-3.5 text-zinc-400"/> Filter</div>
+                     </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
+                    {COLUMNS.map((status, index) => {
+                      const config = COLUMN_CONFIG[status];
+                      const ColumnIcon = config.icon;
+                      const colLeads = leads.filter(l => l.status === status);
+
+                      return (
+                        <div key={status} onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, status)}
+                          className={`flex flex-col gap-4 h-full relative group transition-all duration-700 ease-out transform ${isMounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-12'}`} style={{ transitionDelay: `${index * 100}ms` }}>
+                          
+                          <div className="flex items-center justify-between p-4 rounded-xl border border-white/10 transition-all duration-500 relative overflow-hidden shadow-md bg-[#1F2937]/80 backdrop-blur-md">
+                            <div className="flex items-center gap-2.5">
+                               <ColumnIcon className="w-4 h-4" style={{ color: config.hex, filter: `drop-shadow(0 0 5px ${config.hex})` }} />
+                               <h2 className="text-xs font-bold tracking-widest text-white uppercase">{status.replace('_', ' ')}</h2>
                             </div>
-                            
-                            <div className="flex flex-col items-start mb-3 pl-1 pr-12 relative z-10">
-                              <span className="font-sans text-sm tracking-wide text-white font-semibold drop-shadow-sm line-clamp-1">
-                                {lead.full_name || 'Store Customer'}
-                              </span>
-                              <span className="text-[10px] text-emerald-400 font-bold tracking-widest mt-0.5 drop-shadow-md">
-                                +{lead.phone_number}
-                              </span>
-                            </div>
-                            
-                            <div className="bg-[#111827]/40 rounded-lg p-3 ml-1 border border-white/5 group-hover/card:border-white/10 transition-colors duration-300 shadow-inner">
-                              <p className="text-[11px] text-zinc-300 line-clamp-2 leading-relaxed">{lead.last_message || "No message content."}</p>
-                            </div>
-                            
-                            <div className="mt-3 flex items-center justify-between text-[9px] uppercase tracking-widest text-zinc-400 font-semibold pl-1">
-                              <div className="flex items-center gap-1.5"><Clock className="w-3 h-3 text-zinc-500" />{new Date(lead.created_at).toLocaleDateString()}</div>
-                            </div>
+                            <span className={`text-[10px] font-bold text-white ${config.twBg} bg-opacity-20 px-2.5 py-0.5 rounded-full border border-${config.hex}/30`}>{colLeads.length}</span>
                           </div>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })}
+
+                          <div className={`flex flex-col gap-3 min-h-[40vh] rounded-xl p-1.5 transition-all duration-300 custom-scrollbar ${draggedLead ? 'bg-white/5 border border-dashed border-white/20' : 'border border-transparent'}`}>
+                            {colLeads.map((lead) => (
+                              <div key={lead.id} draggable onDragStart={(e) => handleDragStart(e, lead.id)} onClick={() => setSelectedLead(lead)} 
+                                className={`group/card relative bg-[#374151]/60 backdrop-blur-md border border-white/10 rounded-xl p-4 cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_10px_30px_rgba(0,0,0,0.4)] hover:bg-[#4B5563]/60 hover:border-white/20 overflow-hidden`}>
+                                <div className={`absolute left-0 top-0 bottom-0 w-1 transition-all duration-300 group-hover/card:w-1.5`} style={{ backgroundColor: config.hex, boxShadow: `0 0 15px ${config.hex}` }} />
+                                
+                                <div className="absolute top-3 right-3 flex items-center gap-1.5 opacity-0 group-hover/card:opacity-100 transition-opacity duration-300 z-20">
+                                   <button onClick={(e) => toggleStar(e, lead.id)} className="p-1.5 bg-[#111827]/60 hover:bg-[#1F2937] rounded-md transition-colors text-zinc-400 hover:text-amber-400 border border-white/5 hover:border-amber-500/30" title="Star Lead">
+                                     <Star className={`w-3.5 h-3.5 ${starredLeads.has(lead.id) ? 'fill-amber-400 text-amber-400' : ''}`} />
+                                   </button>
+                                   <button onClick={(e) => handleDeleteLead(e, lead.id)} className="p-1.5 bg-[#111827]/60 hover:bg-red-500/20 rounded-md transition-colors text-zinc-400 hover:text-red-400 border border-white/5 hover:border-red-500/30" title="Delete Conversation">
+                                     <Trash2 className="w-3.5 h-3.5" />
+                                   </button>
+                                </div>
+                                
+                                <div className="flex flex-col items-start mb-3 pl-1 pr-12 relative z-10">
+                                  <span className="font-sans text-sm tracking-wide text-white font-semibold drop-shadow-sm line-clamp-1">
+                                    {lead.full_name || 'Store Customer'}
+                                  </span>
+                                  <span className="text-[10px] text-emerald-400 font-bold tracking-widest mt-0.5 drop-shadow-md">
+                                    +{lead.phone_number}
+                                  </span>
+                                </div>
+                                
+                                <div className="bg-[#111827]/40 rounded-lg p-3 ml-1 border border-white/5 group-hover/card:border-white/10 transition-colors duration-300 shadow-inner">
+                                  <p className="text-[11px] text-zinc-300 line-clamp-2 leading-relaxed">{lead.last_message || "No message content."}</p>
+                                </div>
+                                
+                                <div className="mt-3 flex items-center justify-between text-[9px] uppercase tracking-widest text-zinc-400 font-semibold pl-1">
+                                  <div className="flex items-center gap-1.5"><Clock className="w-3 h-3 text-zinc-500" />{new Date(lead.created_at).toLocaleDateString()}</div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+            </div>
+          </>
+        )}
+
+        {/* ─── VIEW: TEMPLATES HUB ─── */}
+        {activeView === 'templates' && (
+          <div className="flex flex-col h-full animate-[fade-in_0.3s_ease-out]">
+            <div className="h-20 flex items-center justify-between px-8 border-b border-white/10 bg-[#111827]/80 backdrop-blur-xl shrink-0">
+              <div>
+                <h2 className="text-xl font-bold text-white drop-shadow-md">Template & Slash Commands</h2>
+                <p className="text-xs text-zinc-400 font-medium tracking-wide mt-0.5">Manage your team's quick replies and canned responses</p>
               </div>
             </div>
-            
-        </div>
+
+            <div className="flex-1 overflow-y-auto custom-scrollbar p-8">
+               <div className="max-w-5xl mx-auto space-y-8">
+                  
+                  {/* Add New Template Form */}
+                  <div className="bg-[#1F2937]/60 backdrop-blur-xl border border-white/10 rounded-3xl p-6 shadow-2xl">
+                     <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-4"><Zap className="w-4 h-4 text-emerald-400" /> Create New Command</h3>
+                     <form onSubmit={handleAddTemplate} className="flex flex-col md:flex-row gap-4">
+                        <div className="w-full md:w-1/3">
+                           <div className="relative">
+                             <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 font-bold">/</span>
+                             <input 
+                                type="text" 
+                                value={newShortcut} 
+                                onChange={(e) => setNewShortcut(e.target.value)} 
+                                placeholder="shortcut_name" 
+                                className="w-full bg-[#111827]/80 border border-white/10 rounded-xl pl-8 pr-4 py-3 text-sm text-white focus:border-emerald-400 outline-none transition-colors"
+                             />
+                           </div>
+                        </div>
+                        <div className="flex-1">
+                           <input 
+                              type="text" 
+                              value={newTemplateContent} 
+                              onChange={(e) => setNewTemplateContent(e.target.value)} 
+                              placeholder="Type the full message content here..." 
+                              className="w-full bg-[#111827]/80 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:border-emerald-400 outline-none transition-colors"
+                           />
+                        </div>
+                        <button type="submit" disabled={!newShortcut.trim() || !newTemplateContent.trim()} className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 hover:bg-emerald-500/30 hover:border-emerald-400 disabled:opacity-50 disabled:grayscale transition-all rounded-xl px-6 py-3 text-sm font-bold shadow-lg">
+                          Save
+                        </button>
+                     </form>
+                  </div>
+
+                  {/* Templates Grid */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {quickReplies.length === 0 ? (
+                      <div className="col-span-full p-8 text-center bg-[#1F2937]/30 border border-dashed border-white/10 rounded-3xl text-zinc-500 font-medium">
+                        No templates saved yet. Create one above!
+                      </div>
+                    ) : (
+                      quickReplies.map((reply) => (
+                        <div key={reply.id} className="group bg-[#1F2937]/80 border border-white/10 hover:border-white/20 rounded-2xl p-5 shadow-lg backdrop-blur-md transition-all duration-300 hover:-translate-y-1 relative">
+                           
+                           <div className="absolute top-3 right-3 flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button 
+                                onClick={() => handleCopyTemplate(reply.id, reply.content)} 
+                                className={`p-2 rounded-lg transition-colors border ${copiedId === reply.id ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40' : 'bg-[#111827]/60 text-zinc-400 hover:text-white border-white/5 hover:border-white/20'}`}
+                                title="Copy Content"
+                              >
+                                {copiedId === reply.id ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                              </button>
+                              <button 
+                                onClick={() => handleDeleteTemplate(reply.id)} 
+                                className="p-2 bg-[#111827]/60 hover:bg-red-500/20 rounded-lg transition-colors text-zinc-400 hover:text-red-400 border border-white/5 hover:border-red-500/30"
+                                title="Delete Template"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                           </div>
+
+                           <h4 className="text-emerald-400 font-bold text-sm mb-3 flex items-center gap-1">/{reply.shortcut}</h4>
+                           <div className="bg-[#111827]/50 rounded-xl p-4 border border-white/5 shadow-inner min-h-[80px]">
+                             <p className="text-xs text-zinc-300 leading-relaxed">{reply.content}</p>
+                           </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+               </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ─── SLIDE-OUT CHAT & PROFILING PANE ─── */}
@@ -531,8 +688,6 @@ export default function Dashboard() {
                     {chatMessages.length === 0 ? <div className="flex-1 flex items-center justify-center text-zinc-500 text-xs font-sans tracking-widest uppercase">No customer conversation history</div> :
                         chatMessages.map((msg, i) => (
                         <div key={msg.id || i} className={`group/msg relative flex flex-col max-w-[85%] animate-[fade-in_0.3s_ease-out] ${msg.is_outbound ? 'self-end items-end' : 'self-start items-start'}`}>
-                            
-                            {/* NEW: QUICK DELETE INDIVIDUAL MESSAGE (HOVER TO SEE) */}
                             <button 
                                onClick={() => handleDeleteMessage(msg.id)}
                                className={`absolute top-1/2 -translate-y-1/2 ${msg.is_outbound ? '-left-10' : '-right-10'} opacity-0 group-hover/msg:opacity-100 p-2 hover:bg-red-500/20 rounded-full transition-all duration-300 text-zinc-500 hover:text-red-400`}
@@ -540,7 +695,6 @@ export default function Dashboard() {
                             >
                                <Trash2 className="w-3.5 h-3.5" />
                             </button>
-
                             <div className={`p-4 rounded-2xl text-sm leading-relaxed shadow-xl backdrop-blur-md ${msg.is_outbound ? 'bg-gradient-to-br from-emerald-600 to-teal-600 text-white rounded-br-sm shadow-[0_8px_25px_rgba(16,185,129,0.3)] border border-emerald-400/30' : 'bg-[#1F2937] border border-white/10 text-zinc-100 rounded-bl-sm shadow-[0_8px_25px_rgba(0,0,0,0.3)]'}`}>{msg.content}</div>
                             <span className="text-[10px] text-zinc-500 font-bold tracking-widest uppercase mt-2 px-1">{new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                         </div>
@@ -548,12 +702,44 @@ export default function Dashboard() {
                     <div ref={messagesEndRef} />
                 </div>
 
-                <div className="p-6 border-t border-white/10 bg-[#111827]/90 backdrop-blur-xl shrink-0">
+                <div className="p-6 border-t border-white/10 bg-[#111827]/90 backdrop-blur-xl shrink-0 relative">
+                    
+                    {/* ─── QUICK REPLY OVERLAY MENU ─── */}
+                    {showCommandMenu && (
+                      <div className="absolute bottom-full left-6 mb-3 w-80 max-h-64 overflow-y-auto custom-scrollbar bg-[#1F2937]/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-[0_-10px_40px_rgba(0,0,0,0.5)] z-50 animate-[fade-in_0.2s_ease-out]">
+                        <div className="p-3 border-b border-white/5 bg-[#111827]/50 sticky top-0">
+                          <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest flex items-center gap-2"><Zap className="w-3.5 h-3.5 text-amber-400" /> Command Engine</p>
+                        </div>
+                        <div className="p-2 flex flex-col gap-1">
+                          {filteredReplies.length > 0 ? (
+                            filteredReplies.map((reply) => (
+                              <button 
+                                key={reply.id}
+                                onClick={() => insertQuickReply(reply.content)}
+                                className="flex flex-col items-start p-3 rounded-xl hover:bg-white/5 transition-colors border border-transparent hover:border-white/5 text-left"
+                              >
+                                <span className="text-xs font-bold text-emerald-400 mb-1">/{reply.shortcut}</span>
+                                <span className="text-[11px] text-zinc-400 line-clamp-2">{reply.content}</span>
+                              </button>
+                            ))
+                          ) : (
+                            <div className="p-4 text-center text-xs text-zinc-500 font-medium">No commands found.</div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
                     <div className="flex gap-2 mb-3">
                         <button type="button" onClick={() => setIsInternal(!isInternal)} className={`text-[10px] font-bold px-4 py-1.5 rounded-full border transition-all duration-300 hover:scale-105 active:scale-95 ${isInternal ? 'bg-amber-500 text-black border-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.5)]' : 'text-zinc-400 border-white/20 hover:text-amber-400 hover:border-amber-400/50 hover:bg-amber-500/10'}`}>Internal Note</button>
                     </div>
                     <form onSubmit={handleSendMessage} className="relative flex items-center group/form">
-                        <input type="text" value={newMessage} onChange={(e) => setNewMessage(e.target.value)} placeholder={isInternal ? "Add a private team memo..." : "Draft a secure message..."} className={`w-full bg-[#1F2937]/80 border rounded-full pl-6 pr-14 py-4 text-sm focus:outline-none text-white transition-all duration-300 shadow-inner ${isInternal ? 'border-amber-500/50 focus:ring-1 focus:ring-amber-500/80 placeholder-amber-500/50' : 'border-white/20 focus:ring-1 focus:ring-emerald-500/80 focus:border-emerald-500/80 placeholder-zinc-400'}`} />
+                        <input 
+                           type="text" 
+                           value={newMessage} 
+                           onChange={handleInputChange} 
+                           placeholder={isInternal ? "Add a private team memo..." : "Draft a secure message... (Type '/' for templates)"} 
+                           className={`w-full bg-[#1F2937]/80 border rounded-full pl-6 pr-14 py-4 text-sm focus:outline-none text-white transition-all duration-300 shadow-inner ${isInternal ? 'border-amber-500/50 focus:ring-1 focus:ring-amber-500/80 placeholder-amber-500/50' : 'border-white/20 focus:ring-1 focus:ring-emerald-500/80 focus:border-emerald-500/80 placeholder-zinc-400'}`} 
+                        />
                         <button type="submit" disabled={!newMessage.trim()} className={`absolute right-2 p-3 rounded-full transition-all duration-300 disabled:opacity-50 disabled:grayscale disabled:scale-100 hover:scale-110 active:scale-90 ${isInternal ? 'bg-amber-500 text-black shadow-[0_0_15px_rgba(245,158,11,0.5)] hover:bg-amber-400' : 'bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-white shadow-[0_0_20px_rgba(16,185,129,0.5)]'}`}><Send className="w-4 h-4 ml-0.5"/></button>
                     </form>
                 </div>
