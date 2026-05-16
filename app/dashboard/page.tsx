@@ -8,7 +8,7 @@ import {
   Trash2, Activity, MessageCircle, UserCheck, 
   StickyNote, User, Download, ShoppingBag, Loader2,
   LayoutDashboard, LayoutTemplate, BarChart2, Settings, 
-  TrendingUp, Search, Calendar, Plus
+  TrendingUp, Search, Calendar, Plus, Star // <-- Added Star icon here
 } from 'lucide-react';
 import { jsPDF } from "jspdf";
 
@@ -113,6 +113,9 @@ export default function Dashboard() {
 
   const [shopifyData, setShopifyData] = useState<any | null>(null);
   const [loadingShopify, setLoadingShopify] = useState(false);
+  
+  // New State for Starred Leads
+  const [starredLeads, setStarredLeads] = useState<Set<string>>(new Set());
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -222,6 +225,38 @@ export default function Dashboard() {
   const handleDeleteMemo = async (memoId: string) => {
     try { await supabase.from('messages').delete().eq('id', memoId); setMessages(prev => prev.filter(m => m.id !== memoId)); } 
     catch (err) { console.error("Error deleting memo:", err); }
+  };
+
+  // NEW: Delete an individual chat message
+  const handleDeleteMessage = async (msgId: string) => {
+    if (!window.confirm("Delete this message from the system?")) return;
+    try { 
+      await supabase.from('messages').delete().eq('id', msgId); 
+      setMessages(prev => prev.filter(m => m.id !== msgId)); 
+    } 
+    catch (err) { console.error("Error deleting message:", err); }
+  };
+
+  // NEW: Delete an entire lead/conversation card
+  const handleDeleteLead = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation(); // Prevents the card from opening when you click delete
+    if (!window.confirm('Are you sure you want to completely delete this lead and their conversation?')) return;
+    try {
+      await supabase.from('customers').delete().eq('id', id);
+      setLeads(prev => prev.filter(l => l.id !== id));
+      if (selectedLead?.id === id) setSelectedLead(null);
+    } catch (err) { console.error("Error deleting lead:", err); }
+  };
+
+  // NEW: Toggle Star on a card
+  const toggleStar = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation(); // Prevents the card from opening when you click star
+    setStarredLeads(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   };
 
   const handleDragStart = (e: React.DragEvent, id: string) => { setDraggedLead(id); };
@@ -433,8 +468,23 @@ export default function Dashboard() {
                             className={`group/card relative bg-[#374151]/60 backdrop-blur-md border border-white/10 rounded-xl p-4 cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_10px_30px_rgba(0,0,0,0.4)] hover:bg-[#4B5563]/60 hover:border-white/20 overflow-hidden`}>
                             <div className={`absolute left-0 top-0 bottom-0 w-1 transition-all duration-300 group-hover/card:w-1.5`} style={{ backgroundColor: config.hex, boxShadow: `0 0 15px ${config.hex}` }} />
                             
-                            <div className="flex justify-between items-start mb-3 pl-1 relative z-10">
-                              <div className="flex items-center gap-2"><span className="font-sans text-sm tracking-wide text-white font-semibold drop-shadow-sm line-clamp-1">{lead.full_name || lead.phone_number}</span></div>
+                            {/* NEW: QUICK ACTION BUTTONS (HOVER TO SEE) */}
+                            <div className="absolute top-3 right-3 flex items-center gap-1.5 opacity-0 group-hover/card:opacity-100 transition-opacity duration-300 z-20">
+                               <button onClick={(e) => toggleStar(e, lead.id)} className="p-1.5 bg-[#111827]/60 hover:bg-[#1F2937] rounded-md transition-colors text-zinc-400 hover:text-amber-400 border border-white/5 hover:border-amber-500/30" title="Star Lead">
+                                 <Star className={`w-3.5 h-3.5 ${starredLeads.has(lead.id) ? 'fill-amber-400 text-amber-400' : ''}`} />
+                               </button>
+                               <button onClick={(e) => handleDeleteLead(e, lead.id)} className="p-1.5 bg-[#111827]/60 hover:bg-red-500/20 rounded-md transition-colors text-zinc-400 hover:text-red-400 border border-white/5 hover:border-red-500/30" title="Delete Conversation">
+                                 <Trash2 className="w-3.5 h-3.5" />
+                               </button>
+                            </div>
+                            
+                            <div className="flex flex-col items-start mb-3 pl-1 pr-12 relative z-10">
+                              <span className="font-sans text-sm tracking-wide text-white font-semibold drop-shadow-sm line-clamp-1">
+                                {lead.full_name || 'Store Customer'}
+                              </span>
+                              <span className="text-[10px] text-emerald-400 font-bold tracking-widest mt-0.5 drop-shadow-md">
+                                +{lead.phone_number}
+                              </span>
                             </div>
                             
                             <div className="bg-[#111827]/40 rounded-lg p-3 ml-1 border border-white/5 group-hover/card:border-white/10 transition-colors duration-300 shadow-inner">
@@ -480,7 +530,17 @@ export default function Dashboard() {
                 <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-6 custom-scrollbar bg-[#0B1120]/40">
                     {chatMessages.length === 0 ? <div className="flex-1 flex items-center justify-center text-zinc-500 text-xs font-sans tracking-widest uppercase">No customer conversation history</div> :
                         chatMessages.map((msg, i) => (
-                        <div key={i} className={`flex flex-col max-w-[85%] animate-[fade-in_0.3s_ease-out] ${msg.is_outbound ? 'self-end items-end' : 'self-start items-start'}`}>
+                        <div key={msg.id || i} className={`group/msg relative flex flex-col max-w-[85%] animate-[fade-in_0.3s_ease-out] ${msg.is_outbound ? 'self-end items-end' : 'self-start items-start'}`}>
+                            
+                            {/* NEW: QUICK DELETE INDIVIDUAL MESSAGE (HOVER TO SEE) */}
+                            <button 
+                               onClick={() => handleDeleteMessage(msg.id)}
+                               className={`absolute top-1/2 -translate-y-1/2 ${msg.is_outbound ? '-left-10' : '-right-10'} opacity-0 group-hover/msg:opacity-100 p-2 hover:bg-red-500/20 rounded-full transition-all duration-300 text-zinc-500 hover:text-red-400`}
+                               title="Delete Message"
+                            >
+                               <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+
                             <div className={`p-4 rounded-2xl text-sm leading-relaxed shadow-xl backdrop-blur-md ${msg.is_outbound ? 'bg-gradient-to-br from-emerald-600 to-teal-600 text-white rounded-br-sm shadow-[0_8px_25px_rgba(16,185,129,0.3)] border border-emerald-400/30' : 'bg-[#1F2937] border border-white/10 text-zinc-100 rounded-bl-sm shadow-[0_8px_25px_rgba(0,0,0,0.3)]'}`}>{msg.content}</div>
                             <span className="text-[10px] text-zinc-500 font-bold tracking-widest uppercase mt-2 px-1">{new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                         </div>
