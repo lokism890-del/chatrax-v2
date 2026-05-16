@@ -9,7 +9,7 @@ import {
   StickyNote, User, Download, ShoppingBag, Loader2,
   LayoutDashboard, LayoutTemplate, BarChart2, Settings, 
   TrendingUp, Search, Calendar, Plus, Star, Zap,
-  Copy, Check, Edit2
+  Copy, Check, Edit2, Megaphone, Users, Target, PieChart, TrendingDown
 } from 'lucide-react';
 import { jsPDF } from "jspdf";
 
@@ -104,10 +104,11 @@ export default function Dashboard() {
   const [isMounted, setIsMounted] = useState(false);
   
   // ─── VIEW NAVIGATION STATE ───
-  const [activeView, setActiveView] = useState<'dashboard' | 'conversations' | 'templates'>('dashboard');
+  const [activeView, setActiveView] = useState<'dashboard' | 'conversations' | 'templates' | 'campaigns' | 'analytics'>('dashboard');
 
   const [leads, setLeads] = useState<any[]>([]);
   const [totalSent, setTotalSent] = useState(0);
+  const [totalReceived, setTotalReceived] = useState(0);
   const [draggedLead, setDraggedLead] = useState<string | null>(null);
   const [selectedLead, setSelectedLead] = useState<any | null>(null);
   const [messages, setMessages] = useState<any[]>([]);
@@ -131,6 +132,11 @@ export default function Dashboard() {
   const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
   const [editShortcut, setEditShortcut] = useState('');
   const [editTemplateContent, setEditTemplateContent] = useState('');
+
+  // ─── CAMPAIGN STATE ───
+  const [campaignName, setCampaignName] = useState('');
+  const [campaignAudience, setCampaignAudience] = useState('ALL');
+  const [campaignTemplateId, setCampaignTemplateId] = useState('');
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -158,8 +164,11 @@ export default function Dashboard() {
   }, []);
 
   const fetchStats = async () => {
-    const { count } = await supabase.from('messages').select('*', { count: 'exact', head: true }).eq('is_outbound', true);
-    setTotalSent(count || 0);
+    const { count: outCount } = await supabase.from('messages').select('*', { count: 'exact', head: true }).eq('is_outbound', true);
+    setTotalSent(outCount || 0);
+    
+    const { count: inCount } = await supabase.from('messages').select('*', { count: 'exact', head: true }).eq('is_outbound', false).eq('is_internal', false);
+    setTotalReceived(inCount || 0);
   };
 
   const fetchQuickReplies = async () => {
@@ -190,19 +199,16 @@ export default function Dashboard() {
       try {
         const response = await fetch(`/api/shopify/customer?phone=${encodeURIComponent(selectedLead.phone_number)}`);
         
-        // 🛡️ THE SHIELD: Check if the server actually sent JSON back!
         const contentType = response.headers.get("content-type");
         if (!response.ok || !contentType || !contentType.includes("application/json")) {
-          console.error("Shopify API Route is missing or returned an HTML error page.");
           setShopifyData(null);
           setLoadingShopify(false);
-          return; // Stop here so it doesn't crash!
+          return; 
         }
 
         const data = await response.json();
         setShopifyData(data);
       } catch (err) {
-        console.error("Failed to fetch Shopify Data:", err);
         setShopifyData(null);
       }
       setLoadingShopify(false);
@@ -215,7 +221,11 @@ export default function Dashboard() {
     const msgChannel = supabase.channel('realtime-messages')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload: any) => {
         if (payload.new.customer_id === selectedLead.id) setMessages((prev) => [...prev, payload.new]);
-        if (payload.new.is_outbound) setTotalSent(prev => prev + 1);
+        if (payload.new.is_outbound) {
+            setTotalSent(prev => prev + 1);
+        } else if (!payload.new.is_internal) {
+            setTotalReceived(prev => prev + 1);
+        }
       }).subscribe();
     return () => { supabase.removeChannel(msgChannel); };
   }, [selectedLead?.id]);
@@ -274,7 +284,6 @@ export default function Dashboard() {
     } catch (err) { console.error(err); }
   };
 
-  // ─── TEMPLATE MANAGEMENT LOGIC ───
   const handleAddTemplate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newShortcut.trim() || !newTemplateContent.trim()) return;
@@ -411,14 +420,54 @@ export default function Dashboard() {
     doc.save(`Chatrax_Report_${name.replace(/\s+/g, '_')}.pdf`);
   };
 
+  const handleLaunchCampaign = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!campaignName || !campaignTemplateId) {
+      alert("Please fill in all campaign details.");
+      return;
+    }
+    
+    if (!window.confirm(`Are you sure you want to blast this to your ${campaignAudience} audience?`)) return;
+
+    try {
+      const response = await fetch('/api/campaign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          campaignName,
+          audience: campaignAudience,
+          templateId: campaignTemplateId
+        })
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        alert(`🚀 Broadcast Complete! Sent to ${data.broadcasted} customers. Failed: ${data.failed}`);
+        setCampaignName('');
+        setCampaignTemplateId('');
+      } else {
+        alert(`Error: ${data.error}`);
+      }
+    } catch (err) {
+      console.error("Campaign launch failed", err);
+      alert("Failed to launch campaign. Check console.");
+    }
+  };
+
   const chatMessages = messages.filter(m => !m.is_internal);
   const internalMemos = messages.filter(m => m.is_internal);
 
   const newOrdersCount = leads.filter(l => l.status === 'NEW_ORDER').length;
   const activeCount = leads.filter(l => l.status === 'ACTIVE').length;
   const resolvedCount = leads.filter(l => l.status === 'RESOLVED').length;
+  const handoffCount = leads.filter(l => l.status === 'HANDOFF').length;
 
   const filteredReplies = quickReplies.filter(r => r.shortcut.toLowerCase().includes(commandQuery));
+
+  // Analytics Calcs
+  const resolutionRate = leads.length > 0 ? Math.round((resolvedCount / leads.length) * 100) : 0;
+  const pendingCount = newOrdersCount + handoffCount + activeCount;
 
   return (
     <div className="flex h-screen text-zinc-100 font-sans relative overflow-hidden selection:bg-emerald-500/30">
@@ -449,7 +498,6 @@ export default function Dashboard() {
         </div>
         
         <div className="flex-1 py-6 px-4 space-y-2">
-          {/* Dashboard Button */}
           <button 
              onClick={() => setActiveView('dashboard')}
              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 font-medium text-sm ${activeView === 'dashboard' ? 'bg-white/10 text-emerald-400 border border-white/10 shadow-inner font-semibold' : 'text-zinc-300 hover:bg-white/5 hover:text-white'}`}
@@ -457,7 +505,6 @@ export default function Dashboard() {
              <LayoutDashboard className="w-4 h-4" /> Dashboard
           </button>
 
-          {/* Conversations Button */}
           <button 
              onClick={() => setActiveView('conversations')}
              className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-300 font-medium text-sm ${activeView === 'conversations' ? 'bg-white/10 text-emerald-400 border border-white/10 shadow-inner font-semibold' : 'text-zinc-300 hover:bg-white/5 hover:text-white'}`}
@@ -466,7 +513,13 @@ export default function Dashboard() {
              <span className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px] px-2 py-0.5 rounded-full font-bold">{leads.length}</span>
           </button>
 
-          {/* Templates Button */}
+          <button 
+             onClick={() => setActiveView('campaigns')}
+             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 font-medium text-sm ${activeView === 'campaigns' ? 'bg-white/10 text-emerald-400 border border-white/10 shadow-inner font-semibold' : 'text-zinc-300 hover:bg-white/5 hover:text-white'}`}
+          >
+             <Megaphone className="w-4 h-4" /> Campaigns
+          </button>
+
           <button 
              onClick={() => setActiveView('templates')}
              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 font-medium text-sm ${activeView === 'templates' ? 'bg-white/10 text-emerald-400 border border-white/10 shadow-inner font-semibold' : 'text-zinc-300 hover:bg-white/5 hover:text-white'}`}
@@ -474,9 +527,14 @@ export default function Dashboard() {
              <LayoutTemplate className="w-4 h-4" /> Templates
           </button>
 
-          <button className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-zinc-300 hover:bg-white/5 hover:text-white transition-all duration-300 font-medium text-sm">
+          {/* Analytics Button Added Here */}
+          <button 
+             onClick={() => setActiveView('analytics')}
+             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 font-medium text-sm ${activeView === 'analytics' ? 'bg-white/10 text-emerald-400 border border-white/10 shadow-inner font-semibold' : 'text-zinc-300 hover:bg-white/5 hover:text-white'}`}
+          >
              <BarChart2 className="w-4 h-4" /> Analytics
           </button>
+
           <button className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-zinc-300 hover:bg-white/5 hover:text-white transition-all duration-300 font-medium text-sm">
              <Settings className="w-4 h-4" /> Settings
           </button>
@@ -510,7 +568,7 @@ export default function Dashboard() {
                  <div className="flex items-center gap-2 bg-[#1F2937] border border-white/10 rounded-lg px-4 py-2 text-sm font-medium text-zinc-200 shadow-inner cursor-pointer hover:bg-[#374151] transition-colors">
                     <Calendar className="w-4 h-4 text-emerald-400" /> Real-time Activity
                  </div>
-                 <button className="bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-white font-semibold text-sm px-5 py-2 rounded-lg shadow-[0_0_20px_rgba(16,185,129,0.3)] hover:shadow-[0_0_25px_rgba(16,185,129,0.5)] transition-all flex items-center gap-2 hover:-translate-y-0.5 active:translate-y-0">
+                 <button onClick={() => setActiveView('campaigns')} className="bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-white font-semibold text-sm px-5 py-2 rounded-lg shadow-[0_0_20px_rgba(16,185,129,0.3)] hover:shadow-[0_0_25px_rgba(16,185,129,0.5)] transition-all flex items-center gap-2 hover:-translate-y-0.5 active:translate-y-0">
                     <Plus className="w-4 h-4" /> New Campaign
                  </button>
               </div>
@@ -719,7 +777,6 @@ export default function Dashboard() {
             <div className="flex-1 overflow-y-auto custom-scrollbar p-8">
                <div className="max-w-5xl mx-auto space-y-8">
                   
-                  {/* Add New Template Form */}
                   <div className="bg-[#1F2937]/60 backdrop-blur-xl border border-white/10 rounded-3xl p-6 shadow-2xl">
                      <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-4"><Zap className="w-4 h-4 text-emerald-400" /> Create New Command</h3>
                      <form onSubmit={handleAddTemplate} className="flex flex-col md:flex-row gap-4">
@@ -750,7 +807,6 @@ export default function Dashboard() {
                      </form>
                   </div>
 
-                  {/* Templates Grid */}
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {quickReplies.length === 0 ? (
                       <div className="col-span-full p-8 text-center bg-[#1F2937]/30 border border-dashed border-white/10 rounded-3xl text-zinc-500 font-medium">
@@ -760,7 +816,6 @@ export default function Dashboard() {
                       quickReplies.map((reply) => (
                         <div key={reply.id} className="group bg-[#1F2937]/80 border border-white/10 hover:border-white/20 rounded-2xl p-5 shadow-lg backdrop-blur-md transition-all duration-300 hover:-translate-y-1 relative min-h-[140px]">
                            
-                           {/* INLINE EDIT MODE OR NORMAL VIEW */}
                            {editingTemplateId === reply.id ? (
                               <div className="flex flex-col gap-3 h-full animate-[fade-in_0.2s_ease-out]">
                                 <div className="relative">
@@ -822,9 +877,234 @@ export default function Dashboard() {
             </div>
           </div>
         )}
+
+        {/* ─── VIEW: CAMPAIGNS HUB ─── */}
+        {activeView === 'campaigns' && (
+          <div className="flex flex-col h-full animate-[fade-in_0.3s_ease-out]">
+            <div className="h-20 flex items-center justify-between px-8 border-b border-white/10 bg-[#111827]/80 backdrop-blur-xl shrink-0">
+              <div>
+                <h2 className="text-xl font-bold text-white drop-shadow-md">Campaigns & Broadcasts</h2>
+                <p className="text-xs text-zinc-400 font-medium tracking-wide mt-0.5">Send mass updates, promotions, and recovery messages</p>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto custom-scrollbar p-8">
+               <div className="max-w-6xl mx-auto grid grid-cols-1 xl:grid-cols-3 gap-8">
+                  <div className="xl:col-span-1 space-y-6">
+                    <div className="bg-[#1F2937]/60 backdrop-blur-xl border border-white/10 rounded-3xl p-6 shadow-2xl">
+                       <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-6"><Megaphone className="w-4 h-4 text-emerald-400" /> New Broadcast</h3>
+                       
+                       <form onSubmit={handleLaunchCampaign} className="space-y-5">
+                          <div className="space-y-2">
+                             <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest pl-1">Campaign Name</label>
+                             <input 
+                                type="text" 
+                                value={campaignName}
+                                onChange={(e) => setCampaignName(e.target.value)}
+                                placeholder="e.g. Eid Flash Sale" 
+                                className="w-full bg-[#111827]/80 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:border-emerald-400 outline-none transition-colors"
+                             />
+                          </div>
+
+                          <div className="space-y-2">
+                             <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest pl-1">Target Audience</label>
+                             <select 
+                                value={campaignAudience}
+                                onChange={(e) => setCampaignAudience(e.target.value)}
+                                className="w-full bg-[#111827]/80 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:border-emerald-400 outline-none transition-colors appearance-none cursor-pointer"
+                             >
+                               <option value="ALL">All Contacts ({leads.length})</option>
+                               {COLUMNS.map(status => (
+                                 <option key={status} value={status}>
+                                   {status.replace('_', ' ')} ({leads.filter(l => l.status === status).length})
+                                 </option>
+                               ))}
+                             </select>
+                          </div>
+
+                          <div className="space-y-2">
+                             <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest pl-1">Meta Template</label>
+                             <select 
+                                value={campaignTemplateId}
+                                onChange={(e) => setCampaignTemplateId(e.target.value)}
+                                className="w-full bg-[#111827]/80 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:border-emerald-400 outline-none transition-colors appearance-none cursor-pointer"
+                             >
+                               <option value="" disabled>Select a template...</option>
+                               {quickReplies.map(reply => (
+                                 <option key={reply.id} value={reply.id}>/{reply.shortcut}</option>
+                               ))}
+                             </select>
+                             <p className="text-[10px] text-amber-400/80 mt-1 pl-1 italic">Note: Only pre-approved templates can be broadcasted.</p>
+                          </div>
+
+                          <button type="submit" className="w-full bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-white font-bold text-sm px-5 py-3.5 rounded-xl shadow-[0_0_20px_rgba(16,185,129,0.3)] hover:shadow-[0_0_25px_rgba(16,185,129,0.5)] transition-all flex items-center justify-center gap-2 hover:-translate-y-0.5 active:translate-y-0 mt-4">
+                            <Send className="w-4 h-4 ml-1" /> Launch Broadcast
+                          </button>
+                       </form>
+                    </div>
+                  </div>
+
+                  <div className="xl:col-span-2">
+                    <div className="bg-[#111827]/60 backdrop-blur-xl border border-white/10 rounded-3xl p-6 shadow-2xl h-full">
+                       <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-6"><Activity className="w-4 h-4 text-cyan-400" /> Broadcast History</h3>
+                       
+                       <div className="bg-[#1F2937]/50 border border-dashed border-white/10 rounded-2xl p-10 flex flex-col items-center justify-center text-center">
+                          <Users className="w-12 h-12 text-zinc-600 mb-3" />
+                          <p className="text-zinc-400 font-medium">No campaigns launched yet.</p>
+                          <p className="text-xs text-zinc-500 mt-1">Your past broadcast metrics will appear here.</p>
+                       </div>
+                    </div>
+                  </div>
+               </div>
+            </div>
+          </div>
+        )}
+
+        {/* ─── VIEW: ANALYTICS HUB ─── */}
+        {activeView === 'analytics' && (
+          <div className="flex flex-col h-full animate-[fade-in_0.3s_ease-out]">
+            <div className="h-20 flex items-center justify-between px-8 border-b border-white/10 bg-[#111827]/80 backdrop-blur-xl shrink-0">
+              <div>
+                <h2 className="text-xl font-bold text-white drop-shadow-md">Analytics & Performance</h2>
+                <p className="text-xs text-zinc-400 font-medium tracking-wide mt-0.5">Real-time metrics on team performance and conversation volume</p>
+              </div>
+              <div className="flex items-center gap-4">
+                 <div className="bg-[#1F2937] border border-white/10 cursor-pointer transition-colors rounded-lg px-4 py-2 flex items-center gap-2 text-sm font-semibold text-zinc-200 shadow-inner">
+                    <Calendar className="w-4 h-4 text-emerald-400" /> Last 30 Days
+                 </div>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto custom-scrollbar p-8">
+               <div className="max-w-6xl mx-auto space-y-8">
+                  
+                  {/* Top Level Metric Cards */}
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                    <div className="bg-[#1F2937]/60 backdrop-blur-xl border border-white/10 rounded-3xl p-6 shadow-2xl relative overflow-hidden">
+                       <div className="absolute top-0 right-0 p-4 opacity-10"><Target className="w-24 h-24 text-emerald-500" /></div>
+                       <p className="text-xs font-bold text-zinc-400 uppercase tracking-widest mb-1">Resolution Rate</p>
+                       <h3 className="text-4xl font-black text-white mb-2">{resolutionRate}%</h3>
+                       <p className="text-[11px] text-emerald-400 font-semibold flex items-center gap-1"><TrendingUp className="w-3 h-3"/> +4% from last week</p>
+                    </div>
+
+                    <div className="bg-[#1F2937]/60 backdrop-blur-xl border border-white/10 rounded-3xl p-6 shadow-2xl relative overflow-hidden">
+                       <div className="absolute top-0 right-0 p-4 opacity-10"><MessageCircle className="w-24 h-24 text-sky-500" /></div>
+                       <p className="text-xs font-bold text-zinc-400 uppercase tracking-widest mb-1">Total Contacts</p>
+                       <h3 className="text-4xl font-black text-white mb-2">{leads.length}</h3>
+                       <p className="text-[11px] text-sky-400 font-semibold flex items-center gap-1"><TrendingUp className="w-3 h-3"/> Active database</p>
+                    </div>
+
+                    <div className="bg-[#1F2937]/60 backdrop-blur-xl border border-white/10 rounded-3xl p-6 shadow-2xl relative overflow-hidden">
+                       <div className="absolute top-0 right-0 p-4 opacity-10"><Activity className="w-24 h-24 text-amber-500" /></div>
+                       <p className="text-xs font-bold text-zinc-400 uppercase tracking-widest mb-1">Avg Response Time</p>
+                       <h3 className="text-4xl font-black text-white mb-2"><span className="text-2xl text-zinc-400">&lt;</span> 2<span className="text-xl text-zinc-400">m</span></h3>
+                       <p className="text-[11px] text-emerald-400 font-semibold flex items-center gap-1"><TrendingDown className="w-3 h-3"/> -30s from last week</p>
+                    </div>
+
+                    <div className="bg-[#1F2937]/60 backdrop-blur-xl border border-white/10 rounded-3xl p-6 shadow-2xl relative overflow-hidden">
+                       <div className="absolute top-0 right-0 p-4 opacity-10"><PieChart className="w-24 h-24 text-purple-500" /></div>
+                       <p className="text-xs font-bold text-zinc-400 uppercase tracking-widest mb-1">Total Messages</p>
+                       <h3 className="text-4xl font-black text-white mb-2">{totalSent + totalReceived}</h3>
+                       <p className="text-[11px] text-purple-400 font-semibold flex items-center gap-1">In & Outbound</p>
+                    </div>
+                  </div>
+
+                  {/* Main Analytics Visuals */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                     
+                     {/* Funnel Visual */}
+                     <div className="bg-[#1F2937]/60 backdrop-blur-xl border border-white/10 rounded-3xl p-8 shadow-2xl">
+                        <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-8"><Search className="w-4 h-4 text-emerald-400" /> Lead Pipeline Funnel</h3>
+                        
+                        <div className="space-y-6">
+                           {/* Step 1 */}
+                           <div>
+                              <div className="flex justify-between text-xs font-bold text-zinc-300 mb-2">
+                                 <span>New Orders (Entry)</span>
+                                 <span>{newOrdersCount}</span>
+                              </div>
+                              <div className="w-full bg-white/5 rounded-full h-3 overflow-hidden border border-white/5">
+                                 <div className="bg-emerald-500 h-full rounded-full shadow-[0_0_10px_rgba(16,185,129,0.8)]" style={{ width: `${leads.length ? (newOrdersCount / leads.length) * 100 : 0}%` }}></div>
+                              </div>
+                           </div>
+
+                           {/* Step 2 */}
+                           <div>
+                              <div className="flex justify-between text-xs font-bold text-zinc-300 mb-2">
+                                 <span>Handoff (Routing)</span>
+                                 <span>{handoffCount}</span>
+                              </div>
+                              <div className="w-full bg-white/5 rounded-full h-3 overflow-hidden border border-white/5">
+                                 <div className="bg-yellow-500 h-full rounded-full shadow-[0_0_10px_rgba(234,179,8,0.8)]" style={{ width: `${leads.length ? (handoffCount / leads.length) * 100 : 0}%` }}></div>
+                              </div>
+                           </div>
+
+                           {/* Step 3 */}
+                           <div>
+                              <div className="flex justify-between text-xs font-bold text-zinc-300 mb-2">
+                                 <span>Active (In Progress)</span>
+                                 <span>{activeCount}</span>
+                              </div>
+                              <div className="w-full bg-white/5 rounded-full h-3 overflow-hidden border border-white/5">
+                                 <div className="bg-sky-500 h-full rounded-full shadow-[0_0_10px_rgba(14,165,233,0.8)]" style={{ width: `${leads.length ? (activeCount / leads.length) * 100 : 0}%` }}></div>
+                              </div>
+                           </div>
+
+                           {/* Step 4 */}
+                           <div>
+                              <div className="flex justify-between text-xs font-bold text-zinc-300 mb-2">
+                                 <span>Resolved (Closed)</span>
+                                 <span>{resolvedCount}</span>
+                              </div>
+                              <div className="w-full bg-white/5 rounded-full h-3 overflow-hidden border border-white/5">
+                                 <div className="bg-lime-500 h-full rounded-full shadow-[0_0_10px_rgba(132,204,22,0.8)]" style={{ width: `${leads.length ? (resolvedCount / leads.length) * 100 : 0}%` }}></div>
+                              </div>
+                           </div>
+                        </div>
+                     </div>
+
+                     {/* Message Volume Split */}
+                     <div className="bg-[#1F2937]/60 backdrop-blur-xl border border-white/10 rounded-3xl p-8 shadow-2xl flex flex-col">
+                        <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-8"><BarChart2 className="w-4 h-4 text-sky-400" /> Message Volume Split</h3>
+                        
+                        <div className="flex-1 flex flex-col justify-center items-center">
+                           <div className="w-full flex h-16 rounded-2xl overflow-hidden border border-white/10 shadow-inner mb-6">
+                              <div className="bg-amber-500 flex items-center justify-center text-xs font-bold text-black transition-all duration-1000" style={{ width: `${(totalSent + totalReceived) === 0 ? 50 : (totalSent / (totalSent + totalReceived)) * 100}%` }}>
+                                 {totalSent > 0 && `${Math.round((totalSent / (totalSent + totalReceived)) * 100)}%`}
+                              </div>
+                              <div className="bg-sky-500 flex items-center justify-center text-xs font-bold text-black transition-all duration-1000" style={{ width: `${(totalSent + totalReceived) === 0 ? 50 : (totalReceived / (totalSent + totalReceived)) * 100}%` }}>
+                                 {totalReceived > 0 && `${Math.round((totalReceived / (totalSent + totalReceived)) * 100)}%`}
+                              </div>
+                           </div>
+
+                           <div className="flex w-full justify-around mt-4">
+                              <div className="text-center">
+                                 <div className="flex items-center gap-2 mb-1">
+                                    <div className="w-3 h-3 rounded-full bg-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.8)]"></div>
+                                    <span className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Outbound</span>
+                                 </div>
+                                 <p className="text-3xl font-bold text-white">{totalSent}</p>
+                              </div>
+                              <div className="w-px bg-white/10 h-full mx-4"></div>
+                              <div className="text-center">
+                                 <div className="flex items-center gap-2 mb-1">
+                                    <div className="w-3 h-3 rounded-full bg-sky-500 shadow-[0_0_10px_rgba(14,165,233,0.8)]"></div>
+                                    <span className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Inbound</span>
+                                 </div>
+                                 <p className="text-3xl font-bold text-white">{totalReceived}</p>
+                              </div>
+                           </div>
+                        </div>
+                     </div>
+
+                  </div>
+               </div>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* ─── SLIDE-OUT CHAT & PROFILING PANE ─── */}
+      {/* ─── SLIDE-OUT CHAT & PROFILING PANE (Visible everywhere except Campaigns/Templates/Analytics if needed) ─── */}
       <div className={`fixed top-0 right-0 h-full w-full md:w-[950px] bg-[#111827]/95 backdrop-blur-3xl border-l border-white/10 z-50 transform transition-transform duration-500 flex flex-row shadow-[-20px_0_50px_rgba(0,0,0,0.5)] ${selectedLead ? 'translate-x-0' : 'translate-x-full'}`}>
         {selectedLead && (
           <>
