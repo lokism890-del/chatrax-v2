@@ -9,7 +9,8 @@ import {
   StickyNote, User, Download, ShoppingBag, Loader2,
   LayoutDashboard, LayoutTemplate, BarChart2, Settings, 
   TrendingUp, Search, Calendar, Plus, Star, Zap,
-  Copy, Check, Edit2, Megaphone, Users, Target, PieChart, TrendingDown
+  Copy, Check, Edit2, Megaphone, Users, Target, PieChart, TrendingDown,
+  Key, Bell, Globe, Lock, Palette
 } from 'lucide-react';
 import { jsPDF } from "jspdf";
 
@@ -104,7 +105,7 @@ export default function Dashboard() {
   const [isMounted, setIsMounted] = useState(false);
   
   // ─── VIEW NAVIGATION STATE ───
-  const [activeView, setActiveView] = useState<'dashboard' | 'conversations' | 'templates' | 'campaigns' | 'analytics'>('dashboard');
+  const [activeView, setActiveView] = useState<'dashboard' | 'conversations' | 'templates' | 'campaigns' | 'analytics' | 'settings'>('dashboard');
 
   const [leads, setLeads] = useState<any[]>([]);
   const [totalSent, setTotalSent] = useState(0);
@@ -120,6 +121,17 @@ export default function Dashboard() {
   const [shopifyData, setShopifyData] = useState<any | null>(null);
   const [loadingShopify, setLoadingShopify] = useState(false);
   const [starredLeads, setStarredLeads] = useState<Set<string>>(new Set());
+
+  // ─── SETTINGS STATE ───
+  const [settings, setSettings] = useState({
+    metaToken: '',
+    metaPhoneId: '',
+    shopifyDomain: '',
+    adminName: 'Nasir Ahmed',
+    adminEmail: 'admin@chatrax.com',
+    audioAlerts: true,
+    desktopNotifications: false
+  });
 
   // ─── QUICK REPLIES STATE ───
   const [quickReplies, setQuickReplies] = useState<{id: string, shortcut: string, content: string}[]>([]);
@@ -138,6 +150,10 @@ export default function Dashboard() {
   const [campaignAudience, setCampaignAudience] = useState('ALL');
   const [campaignTemplateId, setCampaignTemplateId] = useState('');
 
+  // ─── THEME & LIVE TIME STATE ───
+  const [currentTime, setCurrentTime] = useState("");
+  const [theme, setTheme] = useState('nebula'); 
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -147,6 +163,15 @@ export default function Dashboard() {
     };
     checkAuth();
     setIsMounted(true);
+
+    const savedTheme = localStorage.getItem('chatrax_theme');
+    if (savedTheme) setTheme(savedTheme);
+
+    setCurrentTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+    const timer = setInterval(() => {
+      setCurrentTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+    }, 1000);
+    return () => clearInterval(timer);
   }, [router]);
 
   useEffect(() => {
@@ -162,6 +187,11 @@ export default function Dashboard() {
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, []);
+
+  const handleThemeChange = (newTheme: string) => {
+    setTheme(newTheme);
+    localStorage.setItem('chatrax_theme', newTheme);
+  };
 
   const fetchStats = async () => {
     const { count: outCount } = await supabase.from('messages').select('*', { count: 'exact', head: true }).eq('is_outbound', true);
@@ -426,22 +456,15 @@ export default function Dashboard() {
       alert("Please fill in all campaign details.");
       return;
     }
-    
     if (!window.confirm(`Are you sure you want to blast this to your ${campaignAudience} audience?`)) return;
 
     try {
       const response = await fetch('/api/campaign', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          campaignName,
-          audience: campaignAudience,
-          templateId: campaignTemplateId
-        })
+        body: JSON.stringify({ campaignName, audience: campaignAudience, templateId: campaignTemplateId })
       });
-
       const data = await response.json();
-
       if (data.success) {
         alert(`🚀 Broadcast Complete! Sent to ${data.broadcasted} customers. Failed: ${data.failed}`);
         setCampaignName('');
@@ -463,28 +486,65 @@ export default function Dashboard() {
   const resolvedCount = leads.filter(l => l.status === 'RESOLVED').length;
   const handoffCount = leads.filter(l => l.status === 'HANDOFF').length;
 
+  const activeConversationsCount = leads.filter(l => l.status !== 'RESOLVED').length;
+
   const filteredReplies = quickReplies.filter(r => r.shortcut.toLowerCase().includes(commandQuery));
 
-  // Analytics Calcs
+  // Dynamic Percentage Calculations
+  const totalLeads = leads.length || 1; 
+  const newOrdersPct = leads.length ? Math.round((newOrdersCount / totalLeads) * 100) : 0;
+  const activePct = leads.length ? Math.round((activeCount / totalLeads) * 100) : 0;
+  const resolvedPct = leads.length ? Math.round((resolvedCount / totalLeads) * 100) : 0;
   const resolutionRate = leads.length > 0 ? Math.round((resolvedCount / leads.length) * 100) : 0;
-  const pendingCount = newOrdersCount + handoffCount + activeCount;
 
   return (
-    <div className="flex h-screen text-zinc-100 font-sans relative overflow-hidden selection:bg-emerald-500/30">
-      <div className="fixed inset-0 -z-50 bg-gradient-to-br from-[#0F172A] via-[#1E293B] to-[#0F172A]" />
+    <div className={`flex h-screen text-zinc-100 font-sans relative overflow-hidden selection:bg-emerald-500/30 ${theme === 'grey' ? 'theme-grey' : theme === 'black' ? 'theme-black' : ''}`}>
+      
+      {theme === 'nebula' && <div className="fixed inset-0 -z-50 bg-gradient-to-br from-[#0F172A] via-[#1E293B] to-[#0F172A]" />}
+      {theme === 'grey' && <div className="fixed inset-0 -z-50 bg-[#1e1e24]" />}
+      {theme === 'black' && <div className="fixed inset-0 -z-50 bg-black" />}
 
       <style dangerouslySetInnerHTML={{__html: `
-        @keyframes pulse-slow { 0%, 100% { opacity: 0.3; transform: scale(1); } 50% { opacity: 0.6; transform: scale(1.05); } }
+        @keyframes led-breathe { 0%, 100% { box-shadow: 0 0 4px 1px rgba(16, 185, 129, 0.2); transform: scale(1); opacity: 0.8; } 50% { box-shadow: 0 0 12px 3px rgba(16, 185, 129, 0.6); transform: scale(1.1); opacity: 1; } }
+        .animate-led { animation: led-breathe 3s ease-in-out infinite; }
+        
         @keyframes sweep { 0% { transform: translateX(-100%) skewX(-15deg); } 100% { transform: translateX(200%) skewX(-15deg); } }
         @keyframes fade-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.15); border-radius: 10px; }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.25); }
+
+        /* THEME OVERRIDES */
+        .theme-grey .bg-\\[\\#111827\\]\\/80 { background-color: rgba(43, 43, 54, 0.8) !important; }
+        .theme-grey .bg-\\[\\#1F2937\\]\\/70 { background-color: rgba(56, 56, 70, 0.7) !important; }
+        .theme-grey .bg-\\[\\#1F2937\\]\\/60 { background-color: rgba(56, 56, 70, 0.6) !important; }
+        .theme-grey .bg-\\[\\#1F2937\\]\\/80 { background-color: rgba(56, 56, 70, 0.8) !important; }
+        .theme-grey .bg-\\[\\#1F2937\\]\\/95 { background-color: rgba(56, 56, 70, 0.95) !important; }
+        .theme-grey .bg-\\[\\#1F2937\\] { background-color: #383846 !important; }
+        .theme-grey .bg-\\[\\#374151\\]\\/60 { background-color: rgba(69, 69, 86, 0.6) !important; }
+        .theme-grey .bg-\\[\\#111827\\]\\/40 { background-color: rgba(43, 43, 54, 0.4) !important; }
+        .theme-grey .bg-\\[\\#111827\\]\\/50 { background-color: rgba(43, 43, 54, 0.5) !important; }
+        .theme-grey .bg-\\[\\#111827\\]\\/60 { background-color: rgba(43, 43, 54, 0.6) !important; }
+        .theme-grey .bg-\\[\\#111827\\]\\/90 { background-color: rgba(43, 43, 54, 0.9) !important; }
+        .theme-grey .bg-\\[\\#111827\\]\\/95 { background-color: rgba(43, 43, 54, 0.95) !important; }
+
+        .theme-black .bg-\\[\\#111827\\]\\/80 { background-color: rgba(10, 10, 10, 0.8) !important; }
+        .theme-black .bg-\\[\\#1F2937\\]\\/70 { background-color: rgba(20, 20, 20, 0.7) !important; }
+        .theme-black .bg-\\[\\#1F2937\\]\\/60 { background-color: rgba(20, 20, 20, 0.6) !important; }
+        .theme-black .bg-\\[\\#1F2937\\]\\/80 { background-color: rgba(20, 20, 20, 0.8) !important; }
+        .theme-black .bg-\\[\\#1F2937\\]\\/95 { background-color: rgba(20, 20, 20, 0.95) !important; }
+        .theme-black .bg-\\[\\#1F2937\\] { background-color: #141414 !important; }
+        .theme-black .bg-\\[\\#374151\\]\\/60 { background-color: rgba(30, 30, 30, 0.6) !important; }
+        .theme-black .bg-\\[\\#111827\\]\\/40 { background-color: rgba(10, 10, 10, 0.4) !important; }
+        .theme-black .bg-\\[\\#111827\\]\\/50 { background-color: rgba(10, 10, 10, 0.5) !important; }
+        .theme-black .bg-\\[\\#111827\\]\\/60 { background-color: rgba(10, 10, 10, 0.6) !important; }
+        .theme-black .bg-\\[\\#111827\\]\\/90 { background-color: rgba(10, 10, 10, 0.9) !important; }
+        .theme-black .bg-\\[\\#111827\\]\\/95 { background-color: rgba(10, 10, 10, 0.95) !important; }
       `}} />
 
-      <NebulaBackground />
-      <AnimatedStarfield />
+      {theme === 'nebula' && <NebulaBackground />}
+      {theme === 'nebula' && <AnimatedStarfield />}
 
       {/* ─── LEFT SIDEBAR NAVIGATION ─── */}
       <div className="w-64 border-r border-white/10 bg-[#111827]/80 backdrop-blur-3xl flex flex-col z-40 shadow-[10px_0_30px_rgba(0,0,0,0.3)]">
@@ -510,7 +570,7 @@ export default function Dashboard() {
              className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-300 font-medium text-sm ${activeView === 'conversations' ? 'bg-white/10 text-emerald-400 border border-white/10 shadow-inner font-semibold' : 'text-zinc-300 hover:bg-white/5 hover:text-white'}`}
           >
              <div className="flex items-center gap-3"><MessageSquare className="w-4 h-4" /> Conversations</div>
-             <span className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px] px-2 py-0.5 rounded-full font-bold">{leads.length}</span>
+             <span className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px] px-2 py-0.5 rounded-full font-bold">{activeConversationsCount}</span>
           </button>
 
           <button 
@@ -527,7 +587,6 @@ export default function Dashboard() {
              <LayoutTemplate className="w-4 h-4" /> Templates
           </button>
 
-          {/* Analytics Button Added Here */}
           <button 
              onClick={() => setActiveView('analytics')}
              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 font-medium text-sm ${activeView === 'analytics' ? 'bg-white/10 text-emerald-400 border border-white/10 shadow-inner font-semibold' : 'text-zinc-300 hover:bg-white/5 hover:text-white'}`}
@@ -535,7 +594,10 @@ export default function Dashboard() {
              <BarChart2 className="w-4 h-4" /> Analytics
           </button>
 
-          <button className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-zinc-300 hover:bg-white/5 hover:text-white transition-all duration-300 font-medium text-sm">
+          <button 
+             onClick={() => setActiveView('settings')}
+             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 font-medium text-sm ${activeView === 'settings' ? 'bg-white/10 text-emerald-400 border border-white/10 shadow-inner font-semibold' : 'text-zinc-300 hover:bg-white/5 hover:text-white'}`}
+          >
              <Settings className="w-4 h-4" /> Settings
           </button>
         </div>
@@ -543,10 +605,10 @@ export default function Dashboard() {
         <div className="p-4 border-t border-white/10">
           <div className="flex items-center gap-3 p-3 rounded-xl bg-white/5 border border-white/10 cursor-pointer hover:bg-white/10 transition-colors">
              <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-sky-500 to-blue-600 flex items-center justify-center font-bold text-white shadow-[0_0_10px_rgba(14,165,233,0.4)]">
-               N
+               {settings.adminName ? settings.adminName.charAt(0).toUpperCase() : 'A'}
              </div>
              <div>
-               <p className="text-sm font-semibold text-white">Nasir Ahmed</p>
+               <p className="text-sm font-semibold text-white">{settings.adminName || 'Admin'}</p>
                <p className="text-[10px] text-zinc-400 uppercase tracking-widest font-semibold">Admin</p>
              </div>
           </div>
@@ -565,9 +627,12 @@ export default function Dashboard() {
                 <p className="text-xs text-zinc-400 font-medium tracking-wide mt-0.5">Live overview of your Store & CRM activity</p>
               </div>
               <div className="flex items-center gap-4">
-                 <div className="flex items-center gap-2 bg-[#1F2937] border border-white/10 rounded-lg px-4 py-2 text-sm font-medium text-zinc-200 shadow-inner cursor-pointer hover:bg-[#374151] transition-colors">
-                    <Calendar className="w-4 h-4 text-emerald-400" /> Real-time Activity
+                 
+                 <div className="flex items-center gap-3 bg-[#1F2937]/80 border border-white/10 rounded-lg px-4 py-2 text-xs font-bold tracking-wider text-emerald-400 shadow-inner">
+                    <div className="w-2 h-2 rounded-full bg-emerald-500 animate-led border border-emerald-400/50"></div>
+                    LIVE SYNC • {currentTime || "CONNECTING..."}
                  </div>
+
                  <button onClick={() => setActiveView('campaigns')} className="bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-white font-semibold text-sm px-5 py-2 rounded-lg shadow-[0_0_20px_rgba(16,185,129,0.3)] hover:shadow-[0_0_25px_rgba(16,185,129,0.5)] transition-all flex items-center gap-2 hover:-translate-y-0.5 active:translate-y-0">
                     <Plus className="w-4 h-4" /> New Campaign
                  </button>
@@ -580,7 +645,7 @@ export default function Dashboard() {
                      <div className="absolute top-0 left-0 w-1.5 h-full bg-emerald-500 shadow-[0_0_20px_rgba(16,185,129,0.8)]" />
                      <div className="flex justify-between items-start mb-4 pl-2">
                         <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 group-hover:scale-110 transition-transform"><ShoppingBag className="w-5 h-5"/></div>
-                        <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-1 rounded-full flex items-center gap-1"><TrendingUp className="w-3 h-3"/> +12%</span>
+                        <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-1 rounded-full flex items-center gap-1"><TrendingUp className="w-3 h-3"/> {newOrdersPct}%</span>
                      </div>
                      <p className="text-[11px] font-semibold tracking-widest text-zinc-400 uppercase mb-1 pl-2">New Orders</p>
                      <h3 className="text-3xl font-bold text-white tracking-tight drop-shadow-sm pl-2 mt-1">{newOrdersCount}</h3>
@@ -590,7 +655,7 @@ export default function Dashboard() {
                      <div className="absolute top-0 left-0 w-1.5 h-full bg-sky-500 shadow-[0_0_20px_rgba(14,165,233,0.8)]" />
                      <div className="flex justify-between items-start mb-4 pl-2">
                         <div className="w-10 h-10 rounded-xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-400 group-hover:scale-110 transition-transform"><Activity className="w-5 h-5"/></div>
-                        <span className="text-[10px] font-bold text-sky-400 bg-sky-500/10 border border-sky-500/20 px-2 py-1 rounded-full flex items-center gap-1"><TrendingUp className="w-3 h-3"/> +8%</span>
+                        <span className="text-[10px] font-bold text-sky-400 bg-sky-500/10 border border-sky-500/20 px-2 py-1 rounded-full flex items-center gap-1"><TrendingUp className="w-3 h-3"/> {activePct}%</span>
                      </div>
                      <p className="text-[11px] font-semibold tracking-widest text-zinc-400 uppercase mb-1 pl-2">Active Contacts</p>
                      <h3 className="text-3xl font-bold text-white tracking-tight drop-shadow-sm pl-2 mt-1">{activeCount}</h3>
@@ -600,7 +665,7 @@ export default function Dashboard() {
                      <div className="absolute top-0 left-0 w-1.5 h-full bg-lime-500 shadow-[0_0_20px_rgba(132,204,22,0.8)]" />
                      <div className="flex justify-between items-start mb-4 pl-2">
                         <div className="w-10 h-10 rounded-xl bg-lime-500/10 border border-lime-500/20 flex items-center justify-center text-lime-400 group-hover:scale-110 transition-transform"><ShieldCheck className="w-5 h-5"/></div>
-                        <span className="text-[10px] font-bold text-lime-400 bg-lime-500/10 border border-lime-500/20 px-2 py-1 rounded-full flex items-center gap-1"><TrendingUp className="w-3 h-3"/> +15%</span>
+                        <span className="text-[10px] font-bold text-lime-400 bg-lime-500/10 border border-lime-500/20 px-2 py-1 rounded-full flex items-center gap-1"><TrendingUp className="w-3 h-3"/> {resolvedPct}%</span>
                      </div>
                      <p className="text-[11px] font-semibold tracking-widest text-zinc-400 uppercase mb-1 pl-2">Resolved Leads</p>
                      <h3 className="text-3xl font-bold text-white tracking-tight drop-shadow-sm pl-2 mt-1">{resolvedCount}</h3>
@@ -610,7 +675,7 @@ export default function Dashboard() {
                      <div className="absolute top-0 left-0 w-1.5 h-full bg-amber-500 shadow-[0_0_20px_rgba(245,158,11,0.8)]" />
                      <div className="flex justify-between items-start mb-4 pl-2">
                         <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 group-hover:scale-110 transition-transform"><Send className="w-5 h-5 ml-0.5"/></div>
-                        <span className="text-[10px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-1 rounded-full flex items-center gap-1"><TrendingUp className="w-3 h-3"/> Steady</span>
+                        <span className="text-[10px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-1 rounded-full flex items-center gap-1"><TrendingUp className="w-3 h-3"/> Live</span>
                      </div>
                      <p className="text-[11px] font-semibold tracking-widest text-zinc-400 uppercase mb-1 pl-2">Messages Sent</p>
                      <h3 className="text-3xl font-bold text-white tracking-tight drop-shadow-sm pl-2 mt-1">{totalSent}</h3>
@@ -978,7 +1043,6 @@ export default function Dashboard() {
             <div className="flex-1 overflow-y-auto custom-scrollbar p-8">
                <div className="max-w-6xl mx-auto space-y-8">
                   
-                  {/* Top Level Metric Cards */}
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                     <div className="bg-[#1F2937]/60 backdrop-blur-xl border border-white/10 rounded-3xl p-6 shadow-2xl relative overflow-hidden">
                        <div className="absolute top-0 right-0 p-4 opacity-10"><Target className="w-24 h-24 text-emerald-500" /></div>
@@ -1009,15 +1073,12 @@ export default function Dashboard() {
                     </div>
                   </div>
 
-                  {/* Main Analytics Visuals */}
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                      
-                     {/* Funnel Visual */}
                      <div className="bg-[#1F2937]/60 backdrop-blur-xl border border-white/10 rounded-3xl p-8 shadow-2xl">
                         <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-8"><Search className="w-4 h-4 text-emerald-400" /> Lead Pipeline Funnel</h3>
                         
                         <div className="space-y-6">
-                           {/* Step 1 */}
                            <div>
                               <div className="flex justify-between text-xs font-bold text-zinc-300 mb-2">
                                  <span>New Orders (Entry)</span>
@@ -1028,7 +1089,6 @@ export default function Dashboard() {
                               </div>
                            </div>
 
-                           {/* Step 2 */}
                            <div>
                               <div className="flex justify-between text-xs font-bold text-zinc-300 mb-2">
                                  <span>Handoff (Routing)</span>
@@ -1039,7 +1099,6 @@ export default function Dashboard() {
                               </div>
                            </div>
 
-                           {/* Step 3 */}
                            <div>
                               <div className="flex justify-between text-xs font-bold text-zinc-300 mb-2">
                                  <span>Active (In Progress)</span>
@@ -1050,7 +1109,6 @@ export default function Dashboard() {
                               </div>
                            </div>
 
-                           {/* Step 4 */}
                            <div>
                               <div className="flex justify-between text-xs font-bold text-zinc-300 mb-2">
                                  <span>Resolved (Closed)</span>
@@ -1063,7 +1121,6 @@ export default function Dashboard() {
                         </div>
                      </div>
 
-                     {/* Message Volume Split */}
                      <div className="bg-[#1F2937]/60 backdrop-blur-xl border border-white/10 rounded-3xl p-8 shadow-2xl flex flex-col">
                         <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-8"><BarChart2 className="w-4 h-4 text-sky-400" /> Message Volume Split</h3>
                         
@@ -1102,9 +1159,173 @@ export default function Dashboard() {
             </div>
           </div>
         )}
+
+        {/* ─── VIEW: SETTINGS HUB ─── */}
+        {activeView === 'settings' && (
+          <div className="flex flex-col h-full animate-[fade-in_0.3s_ease-out]">
+            <div className="h-20 flex items-center justify-between px-8 border-b border-white/10 bg-[#111827]/80 backdrop-blur-xl shrink-0">
+              <div>
+                <h2 className="text-xl font-bold text-white drop-shadow-md">System Settings</h2>
+                <p className="text-xs text-zinc-400 font-medium tracking-wide mt-0.5">Manage your CRM integrations, team, and preferences</p>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto custom-scrollbar p-8">
+               <div className="max-w-4xl mx-auto space-y-8">
+
+                  {/* Settings Section: Theme & Appearance */}
+                  <div className="bg-[#1F2937]/60 backdrop-blur-xl border border-white/10 rounded-3xl p-8 shadow-2xl">
+                     <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-6"><Palette className="w-5 h-5 text-pink-400" /> Interface Appearance</h3>
+                     
+                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <button 
+                          onClick={() => handleThemeChange('nebula')} 
+                          className={`flex flex-col items-center justify-center gap-3 px-4 py-6 rounded-2xl border font-bold text-xs transition-all duration-300 ${theme === 'nebula' ? 'border-pink-400 bg-pink-500/10 text-white shadow-[0_0_20px_rgba(244,114,182,0.2)]' : 'border-white/10 text-zinc-400 hover:bg-white/5'}`}
+                        >
+                          <div className="w-12 h-12 rounded-full bg-gradient-to-br from-[#0F172A] via-[#1E293B] to-[#0F172A] border border-white/20"></div>
+                          Nebula Dark (Default)
+                        </button>
+                        
+                        <button 
+                          onClick={() => handleThemeChange('grey')} 
+                          className={`flex flex-col items-center justify-center gap-3 px-4 py-6 rounded-2xl border font-bold text-xs transition-all duration-300 ${theme === 'grey' ? 'border-pink-400 bg-pink-500/10 text-white shadow-[0_0_20px_rgba(244,114,182,0.2)]' : 'border-white/10 text-zinc-400 hover:bg-white/5'}`}
+                        >
+                          <div className="w-12 h-12 rounded-full bg-[#1e1e24] border border-white/20"></div>
+                          Soothing Grey
+                        </button>
+
+                        <button 
+                          onClick={() => handleThemeChange('black')} 
+                          className={`flex flex-col items-center justify-center gap-3 px-4 py-6 rounded-2xl border font-bold text-xs transition-all duration-300 ${theme === 'black' ? 'border-pink-400 bg-pink-500/10 text-white shadow-[0_0_20px_rgba(244,114,182,0.2)]' : 'border-white/10 text-zinc-400 hover:bg-white/5'}`}
+                        >
+                          <div className="w-12 h-12 rounded-full bg-black border border-white/20"></div>
+                          Pure Black Minimal
+                        </button>
+                     </div>
+                  </div>
+
+                  {/* Settings Section: API Integrations */}
+                  <div className="bg-[#1F2937]/60 backdrop-blur-xl border border-white/10 rounded-3xl p-8 shadow-2xl">
+                     <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-6"><Globe className="w-5 h-5 text-sky-400" /> API Integrations</h3>
+                     
+                     <div className="space-y-6">
+                        <div className="bg-[#111827]/60 rounded-2xl p-6 border border-white/5">
+                           <div className="flex items-center justify-between mb-4">
+                              <h4 className="text-white font-bold text-sm flex items-center gap-2">WhatsApp / Meta API</h4>
+                              <span className="px-3 py-1 bg-emerald-500/20 text-emerald-400 text-[10px] font-bold uppercase rounded-full border border-emerald-500/30">Configured</span>
+                           </div>
+                           <div className="space-y-4">
+                              <div>
+                                 <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest pl-1">Permanent Access Token</label>
+                                 <input 
+                                    type="text" 
+                                    value={settings.metaToken} 
+                                    onChange={(e) => setSettings({...settings, metaToken: e.target.value})}
+                                    placeholder="EAAGm0PX4ZCQoBO..."
+                                    className="w-full mt-1 bg-[#1F2937]/80 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:border-sky-400 outline-none transition-colors" 
+                                 />
+                              </div>
+                              <div>
+                                 <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest pl-1">Phone Number ID</label>
+                                 <input 
+                                    type="text" 
+                                    value={settings.metaPhoneId} 
+                                    onChange={(e) => setSettings({...settings, metaPhoneId: e.target.value})}
+                                    placeholder="e.g. 103948273948"
+                                    className="w-full mt-1 bg-[#1F2937]/80 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:border-sky-400 outline-none transition-colors" 
+                                 />
+                              </div>
+                           </div>
+                        </div>
+
+                        <div className="bg-[#111827]/60 rounded-2xl p-6 border border-white/5">
+                           <div className="flex items-center justify-between mb-4">
+                              <h4 className="text-white font-bold text-sm flex items-center gap-2">Shopify Store API</h4>
+                              <span className="px-3 py-1 bg-emerald-500/20 text-emerald-400 text-[10px] font-bold uppercase rounded-full border border-emerald-500/30">Configured</span>
+                           </div>
+                           <div className="space-y-4">
+                              <div>
+                                 <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest pl-1">Store Domain</label>
+                                 <input 
+                                    type="text" 
+                                    value={settings.shopifyDomain} 
+                                    onChange={(e) => setSettings({...settings, shopifyDomain: e.target.value})}
+                                    placeholder="my-store.myshopify.com"
+                                    className="w-full mt-1 bg-[#1F2937]/80 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:border-sky-400 outline-none transition-colors" 
+                                 />
+                              </div>
+                           </div>
+                        </div>
+                     </div>
+                  </div>
+
+                  {/* Settings Section: Preferences */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                     <div className="bg-[#1F2937]/60 backdrop-blur-xl border border-white/10 rounded-3xl p-8 shadow-2xl">
+                        <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-6"><Bell className="w-5 h-5 text-amber-400" /> Notifications</h3>
+                        <div className="space-y-4">
+                           <div 
+                              onClick={() => setSettings({...settings, audioAlerts: !settings.audioAlerts})}
+                              className="flex items-center justify-between p-4 bg-[#111827]/50 rounded-xl border border-white/5 hover:border-white/10 transition-colors cursor-pointer"
+                           >
+                              <div>
+                                 <p className="text-sm font-bold text-white">Audio Alerts</p>
+                                 <p className="text-[10px] text-zinc-400 mt-0.5">Play a sound for incoming messages</p>
+                              </div>
+                              <div className={`w-10 h-6 rounded-full relative transition-colors duration-300 ${settings.audioAlerts ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.4)]' : 'bg-zinc-600'}`}>
+                                 <div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all duration-300 ${settings.audioAlerts ? 'right-1' : 'left-1'}`}></div>
+                              </div>
+                           </div>
+                           <div 
+                              onClick={() => setSettings({...settings, desktopNotifications: !settings.desktopNotifications})}
+                              className="flex items-center justify-between p-4 bg-[#111827]/50 rounded-xl border border-white/5 hover:border-white/10 transition-colors cursor-pointer"
+                           >
+                              <div>
+                                 <p className="text-sm font-bold text-white">Desktop Notifications</p>
+                                 <p className="text-[10px] text-zinc-400 mt-0.5">Show browser push notifications</p>
+                              </div>
+                              <div className={`w-10 h-6 rounded-full relative transition-colors duration-300 ${settings.desktopNotifications ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.4)]' : 'bg-zinc-600'}`}>
+                                 <div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all duration-300 ${settings.desktopNotifications ? 'right-1' : 'left-1'}`}></div>
+                              </div>
+                           </div>
+                        </div>
+                     </div>
+
+                     <div className="bg-[#1F2937]/60 backdrop-blur-xl border border-white/10 rounded-3xl p-8 shadow-2xl">
+                        <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-6"><Lock className="w-5 h-5 text-purple-400" /> Admin Profile</h3>
+                        <div className="space-y-4">
+                           <div>
+                              <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest pl-1">Display Name</label>
+                              <input 
+                                 type="text" 
+                                 value={settings.adminName} 
+                                 onChange={(e) => setSettings({...settings, adminName: e.target.value})}
+                                 className="w-full bg-[#111827]/80 border border-white/10 rounded-xl px-4 py-3 text-sm text-white mt-1 outline-none focus:border-purple-400 transition-colors" 
+                              />
+                           </div>
+                           <div>
+                              <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest pl-1">Email Address</label>
+                              <input 
+                                 type="email" 
+                                 value={settings.adminEmail} 
+                                 onChange={(e) => setSettings({...settings, adminEmail: e.target.value})}
+                                 className="w-full bg-[#111827]/80 border border-white/10 rounded-xl px-4 py-3 text-sm text-white mt-1 outline-none focus:border-purple-400 transition-colors" 
+                              />
+                           </div>
+                           <button onClick={() => alert('Profile Updated!')} className="w-full py-3 bg-purple-500/20 text-purple-400 border border-purple-500/40 rounded-xl font-bold text-sm hover:bg-purple-500/30 transition-colors mt-2 shadow-[0_0_15px_rgba(168,85,247,0.2)] hover:shadow-[0_0_20px_rgba(168,85,247,0.4)]">
+                              Update Profile
+                           </button>
+                        </div>
+                     </div>
+                  </div>
+
+               </div>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* ─── SLIDE-OUT CHAT & PROFILING PANE (Visible everywhere except Campaigns/Templates/Analytics if needed) ─── */}
+      {/* ─── SLIDE-OUT CHAT & PROFILING PANE ─── */}
       <div className={`fixed top-0 right-0 h-full w-full md:w-[950px] bg-[#111827]/95 backdrop-blur-3xl border-l border-white/10 z-50 transform transition-transform duration-500 flex flex-row shadow-[-20px_0_50px_rgba(0,0,0,0.5)] ${selectedLead ? 'translate-x-0' : 'translate-x-full'}`}>
         {selectedLead && (
           <>
