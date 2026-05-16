@@ -9,7 +9,7 @@ import {
   StickyNote, User, Download, ShoppingBag, Loader2,
   LayoutDashboard, LayoutTemplate, BarChart2, Settings, 
   TrendingUp, Search, Calendar, Plus, Star, Zap,
-  Copy, Check // <-- Added new icons for copying
+  Copy, Check
 } from 'lucide-react';
 import { jsPDF } from "jspdf";
 
@@ -300,6 +300,15 @@ export default function Dashboard() {
       setMessages(prev => prev.filter(m => m.id !== memoId)); 
     } 
     catch (err) { console.error("Error deleting memo:", err); }
+  };
+
+  const handleDeleteMessage = async (msgId: string) => {
+    if (!window.confirm("Delete this message from the system?")) return;
+    try { 
+      await supabase.from('messages').delete().eq('id', msgId); 
+      setMessages(prev => prev.filter(m => m.id !== msgId)); 
+    } 
+    catch (err) { console.error("Error deleting message:", err); }
   };
 
   const handleDeleteLead = async (e: React.MouseEvent, id: string) => {
