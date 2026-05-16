@@ -9,7 +9,7 @@ import {
   StickyNote, User, Download, ShoppingBag, Loader2,
   LayoutDashboard, LayoutTemplate, BarChart2, Settings, 
   TrendingUp, Search, Calendar, Plus, Star, Zap,
-  Copy, Check
+  Copy, Check, Edit2
 } from 'lucide-react';
 import { jsPDF } from "jspdf";
 
@@ -104,7 +104,7 @@ export default function Dashboard() {
   const [isMounted, setIsMounted] = useState(false);
   
   // ─── VIEW NAVIGATION STATE ───
-  const [activeView, setActiveView] = useState<'dashboard' | 'templates'>('dashboard');
+  const [activeView, setActiveView] = useState<'dashboard' | 'conversations' | 'templates'>('dashboard');
 
   const [leads, setLeads] = useState<any[]>([]);
   const [totalSent, setTotalSent] = useState(0);
@@ -127,6 +127,10 @@ export default function Dashboard() {
   const [newShortcut, setNewShortcut] = useState('');
   const [newTemplateContent, setNewTemplateContent] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
+  const [editShortcut, setEditShortcut] = useState('');
+  const [editTemplateContent, setEditTemplateContent] = useState('');
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -185,6 +189,16 @@ export default function Dashboard() {
       setLoadingShopify(true);
       try {
         const response = await fetch(`/api/shopify/customer?phone=${encodeURIComponent(selectedLead.phone_number)}`);
+        
+        // 🛡️ THE SHIELD: Check if the server actually sent JSON back!
+        const contentType = response.headers.get("content-type");
+        if (!response.ok || !contentType || !contentType.includes("application/json")) {
+          console.error("Shopify API Route is missing or returned an HTML error page.");
+          setShopifyData(null);
+          setLoadingShopify(false);
+          return; // Stop here so it doesn't crash!
+        }
+
         const data = await response.json();
         setShopifyData(data);
       } catch (err) {
@@ -292,6 +306,34 @@ export default function Dashboard() {
     navigator.clipboard.writeText(content);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const startEditingTemplate = (template: {id: string, shortcut: string, content: string}) => {
+    setEditingTemplateId(template.id);
+    setEditShortcut(template.shortcut);
+    setEditTemplateContent(template.content);
+  };
+
+  const cancelEditingTemplate = () => {
+    setEditingTemplateId(null);
+    setEditShortcut('');
+    setEditTemplateContent('');
+  };
+
+  const handleUpdateTemplate = async (id: string) => {
+    if (!editShortcut.trim() || !editTemplateContent.trim()) return;
+    try {
+      const cleanShortcut = editShortcut.replace('/', '').trim().toLowerCase();
+      const { error } = await supabase
+        .from('quick_replies')
+        .update({ shortcut: cleanShortcut, content: editTemplateContent.trim() })
+        .eq('id', id);
+
+      if (!error) {
+        setQuickReplies(prev => prev.map(q => q.id === id ? { ...q, shortcut: cleanShortcut, content: editTemplateContent.trim() } : q));
+        setEditingTemplateId(null);
+      }
+    } catch (err) { console.error("Error updating template:", err); }
   };
 
   const handleDeleteMemo = async (memoId: string) => {
@@ -410,12 +452,16 @@ export default function Dashboard() {
           {/* Dashboard Button */}
           <button 
              onClick={() => setActiveView('dashboard')}
-             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 font-semibold text-sm ${activeView === 'dashboard' ? 'bg-white/10 text-emerald-400 border border-white/10 shadow-inner' : 'text-zinc-300 hover:bg-white/5 hover:text-white'}`}
+             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 font-medium text-sm ${activeView === 'dashboard' ? 'bg-white/10 text-emerald-400 border border-white/10 shadow-inner font-semibold' : 'text-zinc-300 hover:bg-white/5 hover:text-white'}`}
           >
              <LayoutDashboard className="w-4 h-4" /> Dashboard
           </button>
 
-          <button className="w-full flex items-center justify-between px-4 py-3 rounded-xl text-zinc-300 hover:bg-white/5 hover:text-white transition-all duration-300 font-medium text-sm">
+          {/* Conversations Button */}
+          <button 
+             onClick={() => setActiveView('conversations')}
+             className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-300 font-medium text-sm ${activeView === 'conversations' ? 'bg-white/10 text-emerald-400 border border-white/10 shadow-inner font-semibold' : 'text-zinc-300 hover:bg-white/5 hover:text-white'}`}
+          >
              <div className="flex items-center gap-3"><MessageSquare className="w-4 h-4" /> Conversations</div>
              <span className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px] px-2 py-0.5 rounded-full font-bold">{leads.length}</span>
           </button>
@@ -423,7 +469,7 @@ export default function Dashboard() {
           {/* Templates Button */}
           <button 
              onClick={() => setActiveView('templates')}
-             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 font-semibold text-sm ${activeView === 'templates' ? 'bg-white/10 text-emerald-400 border border-white/10 shadow-inner' : 'text-zinc-300 hover:bg-white/5 hover:text-white'}`}
+             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 font-medium text-sm ${activeView === 'templates' ? 'bg-white/10 text-emerald-400 border border-white/10 shadow-inner font-semibold' : 'text-zinc-300 hover:bg-white/5 hover:text-white'}`}
           >
              <LayoutTemplate className="w-4 h-4" /> Templates
           </button>
@@ -452,10 +498,9 @@ export default function Dashboard() {
       {/* ─── MAIN CONTENT AREA ─── */}
       <div className="flex-1 flex flex-col h-full overflow-hidden relative z-30">
         
-        {/* VIEW: DASHBOARD */}
+        {/* VIEW: DASHBOARD (Overview) */}
         {activeView === 'dashboard' && (
-          <>
-            {/* TOP HEADER */}
+          <div className="flex flex-col h-full animate-[fade-in_0.3s_ease-out]">
             <div className="h-20 flex items-center justify-between px-8 border-b border-white/10 bg-[#111827]/80 backdrop-blur-xl shrink-0">
               <div>
                 <h2 className="text-xl font-bold text-white drop-shadow-md">Command Center</h2>
@@ -471,10 +516,7 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* SCROLLABLE DASHBOARD BODY */}
-            <div className="flex-1 overflow-y-auto custom-scrollbar p-8 animate-[fade-in_0.3s_ease-out]">
-                
-                {/* ─── KPI STAT CARDS ─── */}
+            <div className="flex-1 overflow-y-auto custom-scrollbar p-8">
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
                   <div className="bg-[#1F2937]/70 backdrop-blur-2xl border border-white/10 rounded-2xl p-6 shadow-xl relative overflow-hidden group hover:bg-[#1F2937]/90 transition-colors">
                      <div className="absolute top-0 left-0 w-1.5 h-full bg-emerald-500 shadow-[0_0_20px_rgba(16,185,129,0.8)]" />
@@ -517,10 +559,9 @@ export default function Dashboard() {
                   </div>
                 </div>
 
-                {/* ─── ACTION BOARD (KANBAN) ─── */}
                 <div className="bg-[#111827]/60 backdrop-blur-xl border border-white/10 rounded-3xl p-6 shadow-2xl">
                   <div className="flex items-center justify-between mb-6 px-2">
-                     <h3 className="text-lg font-bold text-white drop-shadow-sm">Live Action Board</h3>
+                     <h3 className="text-lg font-bold text-white drop-shadow-sm">Live Action Board (Overview)</h3>
                      <div className="flex gap-2">
                         <div className="bg-[#1F2937] border border-white/10 hover:bg-[#374151] cursor-pointer transition-colors rounded-lg px-4 py-2 flex items-center gap-2 text-xs font-semibold text-zinc-300"><Search className="w-3.5 h-3.5 text-zinc-400"/> Filter</div>
                      </div>
@@ -544,7 +585,7 @@ export default function Dashboard() {
                             <span className={`text-[10px] font-bold text-white ${config.twBg} bg-opacity-20 px-2.5 py-0.5 rounded-full border border-${config.hex}/30`}>{colLeads.length}</span>
                           </div>
 
-                          <div className={`flex flex-col gap-3 min-h-[40vh] rounded-xl p-1.5 transition-all duration-300 custom-scrollbar ${draggedLead ? 'bg-white/5 border border-dashed border-white/20' : 'border border-transparent'}`}>
+                          <div className={`flex flex-col gap-3 min-h-[30vh] rounded-xl p-1.5 transition-all duration-300 custom-scrollbar ${draggedLead ? 'bg-white/5 border border-dashed border-white/20' : 'border border-transparent'}`}>
                             {colLeads.map((lead) => (
                               <div key={lead.id} draggable onDragStart={(e) => handleDragStart(e, lead.id)} onClick={() => setSelectedLead(lead)} 
                                 className={`group/card relative bg-[#374151]/60 backdrop-blur-md border border-white/10 rounded-xl p-4 cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_10px_30px_rgba(0,0,0,0.4)] hover:bg-[#4B5563]/60 hover:border-white/20 overflow-hidden`}>
@@ -584,7 +625,85 @@ export default function Dashboard() {
                   </div>
                 </div>
             </div>
-          </>
+          </div>
+        )}
+
+        {/* ─── VIEW: CONVERSATIONS (Dedicated Full Kanban) ─── */}
+        {activeView === 'conversations' && (
+          <div className="flex flex-col h-full animate-[fade-in_0.3s_ease-out]">
+            <div className="h-20 flex items-center justify-between px-8 border-b border-white/10 bg-[#111827]/80 backdrop-blur-xl shrink-0">
+              <div>
+                <h2 className="text-xl font-bold text-white drop-shadow-md">Conversations</h2>
+                <p className="text-xs text-zinc-400 font-medium tracking-wide mt-0.5">Manage and route your active customer chats</p>
+              </div>
+              <div className="flex items-center gap-4">
+                 <div className="bg-[#1F2937] border border-white/10 hover:bg-[#374151] cursor-pointer transition-colors rounded-lg px-4 py-2 flex items-center gap-2 text-sm font-semibold text-zinc-200 shadow-inner">
+                    <Search className="w-4 h-4 text-zinc-400" /> Filter
+                 </div>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto custom-scrollbar p-8">
+               <div className="bg-[#111827]/60 backdrop-blur-xl border border-white/10 rounded-3xl p-6 shadow-2xl h-full min-h-[70vh]">
+                  <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start h-full">
+                    {COLUMNS.map((status, index) => {
+                      const config = COLUMN_CONFIG[status];
+                      const ColumnIcon = config.icon;
+                      const colLeads = leads.filter(l => l.status === status);
+
+                      return (
+                        <div key={status} onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, status)}
+                          className={`flex flex-col gap-4 h-full relative group transition-all duration-700 ease-out transform ${isMounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-12'}`} style={{ transitionDelay: `${index * 100}ms` }}>
+                          
+                          <div className="flex items-center justify-between p-4 rounded-xl border border-white/10 transition-all duration-500 relative overflow-hidden shadow-md bg-[#1F2937]/80 backdrop-blur-md">
+                            <div className="flex items-center gap-2.5">
+                               <ColumnIcon className="w-4 h-4" style={{ color: config.hex, filter: `drop-shadow(0 0 5px ${config.hex})` }} />
+                               <h2 className="text-xs font-bold tracking-widest text-white uppercase">{status.replace('_', ' ')}</h2>
+                            </div>
+                            <span className={`text-[10px] font-bold text-white ${config.twBg} bg-opacity-20 px-2.5 py-0.5 rounded-full border border-${config.hex}/30`}>{colLeads.length}</span>
+                          </div>
+
+                          <div className={`flex flex-col gap-3 h-full min-h-[50vh] rounded-xl p-1.5 transition-all duration-300 custom-scrollbar ${draggedLead ? 'bg-white/5 border border-dashed border-white/20' : 'border border-transparent'}`}>
+                            {colLeads.map((lead) => (
+                              <div key={lead.id} draggable onDragStart={(e) => handleDragStart(e, lead.id)} onClick={() => setSelectedLead(lead)} 
+                                className={`group/card relative bg-[#374151]/60 backdrop-blur-md border border-white/10 rounded-xl p-4 cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_10px_30px_rgba(0,0,0,0.4)] hover:bg-[#4B5563]/60 hover:border-white/20 overflow-hidden`}>
+                                <div className={`absolute left-0 top-0 bottom-0 w-1 transition-all duration-300 group-hover/card:w-1.5`} style={{ backgroundColor: config.hex, boxShadow: `0 0 15px ${config.hex}` }} />
+                                
+                                <div className="absolute top-3 right-3 flex items-center gap-1.5 opacity-0 group-hover/card:opacity-100 transition-opacity duration-300 z-20">
+                                   <button onClick={(e) => toggleStar(e, lead.id)} className="p-1.5 bg-[#111827]/60 hover:bg-[#1F2937] rounded-md transition-colors text-zinc-400 hover:text-amber-400 border border-white/5 hover:border-amber-500/30" title="Star Lead">
+                                     <Star className={`w-3.5 h-3.5 ${starredLeads.has(lead.id) ? 'fill-amber-400 text-amber-400' : ''}`} />
+                                   </button>
+                                   <button onClick={(e) => handleDeleteLead(e, lead.id)} className="p-1.5 bg-[#111827]/60 hover:bg-red-500/20 rounded-md transition-colors text-zinc-400 hover:text-red-400 border border-white/5 hover:border-red-500/30" title="Delete Conversation">
+                                     <Trash2 className="w-3.5 h-3.5" />
+                                   </button>
+                                </div>
+                                
+                                <div className="flex flex-col items-start mb-3 pl-1 pr-12 relative z-10">
+                                  <span className="font-sans text-sm tracking-wide text-white font-semibold drop-shadow-sm line-clamp-1">
+                                    {lead.full_name || 'Store Customer'}
+                                  </span>
+                                  <span className="text-[10px] text-emerald-400 font-bold tracking-widest mt-0.5 drop-shadow-md">
+                                    +{lead.phone_number}
+                                  </span>
+                                </div>
+                                
+                                <div className="bg-[#111827]/40 rounded-lg p-3 ml-1 border border-white/5 group-hover/card:border-white/10 transition-colors duration-300 shadow-inner">
+                                  <p className="text-[11px] text-zinc-300 line-clamp-2 leading-relaxed">{lead.last_message || "No message content."}</p>
+                                </div>
+                                
+                                <div className="mt-3 flex items-center justify-between text-[9px] uppercase tracking-widest text-zinc-400 font-semibold pl-1">
+                                  <div className="flex items-center gap-1.5"><Clock className="w-3 h-3 text-zinc-500" />{new Date(lead.created_at).toLocaleDateString()}</div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+               </div>
+            </div>
+          </div>
         )}
 
         {/* ─── VIEW: TEMPLATES HUB ─── */}
@@ -639,29 +758,62 @@ export default function Dashboard() {
                       </div>
                     ) : (
                       quickReplies.map((reply) => (
-                        <div key={reply.id} className="group bg-[#1F2937]/80 border border-white/10 hover:border-white/20 rounded-2xl p-5 shadow-lg backdrop-blur-md transition-all duration-300 hover:-translate-y-1 relative">
+                        <div key={reply.id} className="group bg-[#1F2937]/80 border border-white/10 hover:border-white/20 rounded-2xl p-5 shadow-lg backdrop-blur-md transition-all duration-300 hover:-translate-y-1 relative min-h-[140px]">
                            
-                           <div className="absolute top-3 right-3 flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button 
-                                onClick={() => handleCopyTemplate(reply.id, reply.content)} 
-                                className={`p-2 rounded-lg transition-colors border ${copiedId === reply.id ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40' : 'bg-[#111827]/60 text-zinc-400 hover:text-white border-white/5 hover:border-white/20'}`}
-                                title="Copy Content"
-                              >
-                                {copiedId === reply.id ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                              </button>
-                              <button 
-                                onClick={() => handleDeleteTemplate(reply.id)} 
-                                className="p-2 bg-[#111827]/60 hover:bg-red-500/20 rounded-lg transition-colors text-zinc-400 hover:text-red-400 border border-white/5 hover:border-red-500/30"
-                                title="Delete Template"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                           </div>
+                           {/* INLINE EDIT MODE OR NORMAL VIEW */}
+                           {editingTemplateId === reply.id ? (
+                              <div className="flex flex-col gap-3 h-full animate-[fade-in_0.2s_ease-out]">
+                                <div className="relative">
+                                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 font-bold text-xs">/</span>
+                                   <input 
+                                      type="text" 
+                                      value={editShortcut} 
+                                      onChange={(e) => setEditShortcut(e.target.value)} 
+                                      className="w-full bg-[#111827]/80 border border-white/10 rounded-lg pl-6 pr-3 py-2 text-xs text-white focus:border-emerald-400 outline-none transition-colors"
+                                   />
+                                </div>
+                                <textarea 
+                                   value={editTemplateContent} 
+                                   onChange={(e) => setEditTemplateContent(e.target.value)} 
+                                   className="w-full bg-[#111827]/80 border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:border-emerald-400 outline-none resize-none transition-colors flex-1 custom-scrollbar"
+                                />
+                                <div className="flex gap-2 justify-end mt-auto">
+                                  <button onClick={cancelEditingTemplate} className="px-3 py-1.5 rounded-lg text-xs font-bold text-zinc-400 hover:text-white hover:bg-white/5 transition-colors">Cancel</button>
+                                  <button onClick={() => handleUpdateTemplate(reply.id)} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 transition-colors">Save</button>
+                                </div>
+                              </div>
+                           ) : (
+                              <>
+                                 <div className="absolute top-3 right-3 flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <button 
+                                      onClick={() => startEditingTemplate(reply)} 
+                                      className="p-2 bg-[#111827]/60 hover:bg-blue-500/20 rounded-lg transition-colors text-zinc-400 hover:text-blue-400 border border-white/5 hover:border-blue-500/30"
+                                      title="Edit Template"
+                                    >
+                                      <Edit2 className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button 
+                                      onClick={() => handleCopyTemplate(reply.id, reply.content)} 
+                                      className={`p-2 rounded-lg transition-colors border ${copiedId === reply.id ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40' : 'bg-[#111827]/60 text-zinc-400 hover:text-white border-white/5 hover:border-white/20'}`}
+                                      title="Copy Content"
+                                    >
+                                      {copiedId === reply.id ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                                    </button>
+                                    <button 
+                                      onClick={() => handleDeleteTemplate(reply.id)} 
+                                      className="p-2 bg-[#111827]/60 hover:bg-red-500/20 rounded-lg transition-colors text-zinc-400 hover:text-red-400 border border-white/5 hover:border-red-500/30"
+                                      title="Delete Template"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                 </div>
 
-                           <h4 className="text-emerald-400 font-bold text-sm mb-3 flex items-center gap-1">/{reply.shortcut}</h4>
-                           <div className="bg-[#111827]/50 rounded-xl p-4 border border-white/5 shadow-inner min-h-[80px]">
-                             <p className="text-xs text-zinc-300 leading-relaxed">{reply.content}</p>
-                           </div>
+                                 <h4 className="text-emerald-400 font-bold text-sm mb-3 flex items-center gap-1">/{reply.shortcut}</h4>
+                                 <div className="bg-[#111827]/50 rounded-xl p-4 border border-white/5 shadow-inner min-h-[80px]">
+                                   <p className="text-xs text-zinc-300 leading-relaxed">{reply.content}</p>
+                                 </div>
+                              </>
+                           )}
                         </div>
                       ))
                     )}

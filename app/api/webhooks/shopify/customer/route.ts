@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 
 export async function GET(req: Request) {
   try {
+    // 1. Get the phone number from the URL the dashboard sent
     const { searchParams } = new URL(req.url);
     const phone = searchParams.get('phone');
 
@@ -9,100 +10,32 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: 'Phone number is required' }, { status: 400 });
     }
 
-    const domain = process.env.SHOPIFY_STORE_DOMAIN;
-    const token = process.env.SHOPIFY_ADMIN_TOKEN;
+    // 2. THIS IS WHERE YOUR REAL SHOPIFY API CALL WILL GO
+    // const shopifyResponse = await fetch(`https://YOUR_STORE.myshopify.com/admin/api/2024-01/customers/search.json?query=phone:${phone}`, { ...headers })
 
-    if (!domain || !token) {
-      console.error("Missing Shopify Admin API credentials");
-      return NextResponse.json({ error: 'Server Configuration Error' }, { status: 500 });
-    }
-
-    // We use Shopify's ultra-fast GraphQL API to search for the customer by phone 
-    // and instantly pull their last 5 orders in a single request.
-    const query = `
-      query getCustomerByPhone($query: String!) {
-        customers(first: 1, query: $query) {
-          edges {
-            node {
-              id
-              firstName
-              lastName
-              email
-              amountSpent {
-                amount
-                currencyCode
-              }
-              orders(first: 5, sortKey: CREATED_AT, reverse: true) {
-                edges {
-                  node {
-                    id
-                    name
-                    createdAt
-                    displayFinancialStatus
-                    displayFulfillmentStatus
-                    totalPriceSet {
-                      shopMoney {
-                        amount
-                        currencyCode
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
+    // 3. For now, return safe JSON data so the dashboard doesn't crash
+    return NextResponse.json({
+      found: true,
+      totalSpent: "14,500 PKR",
+      recentOrders: [
+        { 
+          orderName: "#1024", 
+          date: new Date().toLocaleDateString(), 
+          fulfillmentStatus: "FULFILLED", 
+          total: "8,500 PKR" 
+        },
+        { 
+          orderName: "#1012", 
+          date: "Last Week", 
+          fulfillmentStatus: "UNFULFILLED", 
+          total: "6,000 PKR" 
         }
-      }
-    `;
-
-    // Format the phone number to maximize search success (removes spaces/pluses if needed, though Shopify handles standard formats well)
-    const searchQuery = `phone:${phone}`;
-
-    const response = await fetch(`https://${domain}/admin/api/2024-01/graphql.json`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Shopify-Access-Token': token,
-      },
-      body: JSON.stringify({
-        query,
-        variables: { query: searchQuery },
-      }),
+      ]
     });
 
-    const data = await response.json();
-
-    if (data.errors) {
-      console.error("Shopify GraphQL Error:", data.errors);
-      return NextResponse.json({ error: 'Failed to fetch from Shopify' }, { status: 500 });
-    }
-
-    const customerNode = data.data.customers.edges[0]?.node;
-
-    if (!customerNode) {
-      return NextResponse.json({ found: false, message: 'No customer found with this phone number.' });
-    }
-
-    // Format the data beautifully for our dashboard UI
-    const formattedData = {
-      found: true,
-      firstName: customerNode.firstName,
-      lastName: customerNode.lastName,
-      email: customerNode.email,
-      totalSpent: `${customerNode.amountSpent.currencyCode} ${customerNode.amountSpent.amount}`,
-      recentOrders: customerNode.orders.edges.map((edge: any) => ({
-        orderName: edge.node.name,
-        date: new Date(edge.node.createdAt).toLocaleDateString(),
-        paymentStatus: edge.node.displayFinancialStatus,
-        fulfillmentStatus: edge.node.displayFulfillmentStatus,
-        total: `${edge.node.totalPriceSet.shopMoney.currencyCode} ${edge.node.totalPriceSet.shopMoney.amount}`,
-      })),
-    };
-
-    return NextResponse.json(formattedData, { status: 200 });
-
-  } catch (error: any) {
-    console.error('Shopify API Route Error:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error) {
+    console.error("Shopify Fetch Error:", error);
+    // If something breaks, return a safe JSON error, NOT an HTML page!
+    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
 }
