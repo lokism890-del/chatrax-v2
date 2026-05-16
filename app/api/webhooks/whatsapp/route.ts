@@ -3,22 +3,28 @@ import { supabase } from '../../../../lib/supabase'; // Adjust this path if need
 
 // 1. META VERIFICATION (Runs once when you connect the app)
 export async function GET(req: Request) {
-  const { searchParams } = new URL(req.url);
-  const mode = searchParams.get('hub.mode');
-  const token = searchParams.get('hub.verify_token');
-  const challenge = searchParams.get('hub.challenge');
-
-  // This is a password you will make up in Step 2
-  const verifyToken = process.env.META_WEBHOOK_VERIFY_TOKEN;
-
-  if (mode === 'subscribe' && token === verifyToken) {
-    console.log('Meta Webhook Verified!');
-    return new NextResponse(challenge, { status: 200 });
-  } else {
-    return new NextResponse('Forbidden', { status: 403 });
+    const { searchParams } = new URL(req.url);
+    const mode = searchParams.get('hub.mode');
+    const token = searchParams.get('hub.verify_token');
+    const challenge = searchParams.get('hub.challenge');
+  
+    const verifyToken = process.env.META_WEBHOOK_VERIFY_TOKEN;
+  
+    if (mode === 'subscribe' && token === verifyToken) {
+      console.log('Meta Webhook Verified! Challenge sent:', challenge);
+      
+      // Explicitly tell Meta this is raw text, not HTML or JSON
+      return new NextResponse(challenge, { 
+        status: 200,
+        headers: {
+          'Content-Type': 'text/plain',
+        }
+      });
+    } else {
+      console.error('Meta Verification Failed. Tokens did not match.');
+      return new NextResponse('Forbidden', { status: 403 });
+    }
   }
-}
-
 // 2. RECEIVING MESSAGES (Runs every time someone texts you)
 export async function POST(req: Request) {
   try {
