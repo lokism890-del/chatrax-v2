@@ -1,30 +1,34 @@
 import { NextResponse } from 'next/server';
-import { supabase } from '../../../../lib/supabase'; // Adjust this path if needed
+import { supabase } from '../../../../lib/supabase';
 
-// 1. META VERIFICATION (Runs once when you connect the app)
+// THIS IS THE MAGIC LINE: It completely disables Next.js caching for this route
+export const dynamic = 'force-dynamic';
+
+// 1. META VERIFICATION
 export async function GET(req: Request) {
-    const { searchParams } = new URL(req.url);
-    const mode = searchParams.get('hub.mode');
-    const token = searchParams.get('hub.verify_token');
-    const challenge = searchParams.get('hub.challenge');
-  
-    const verifyToken = process.env.META_WEBHOOK_VERIFY_TOKEN;
-  
-    if (mode === 'subscribe' && token === verifyToken) {
-      console.log('Meta Webhook Verified! Challenge sent:', challenge);
-      
-      // Explicitly tell Meta this is raw text, not HTML or JSON
-      return new NextResponse(challenge, { 
-        status: 200,
-        headers: {
-          'Content-Type': 'text/plain',
-        }
-      });
-    } else {
-      console.error('Meta Verification Failed. Tokens did not match.');
-      return new NextResponse('Forbidden', { status: 403 });
-    }
+  const { searchParams } = new URL(req.url);
+  const mode = searchParams.get('hub.mode');
+  const token = searchParams.get('hub.verify_token');
+  const challenge = searchParams.get('hub.challenge');
+
+  const verifyToken = process.env.META_WEBHOOK_VERIFY_TOKEN;
+
+  if (mode === 'subscribe' && token === verifyToken) {
+    console.log('Meta Webhook Verified! Challenge sent:', challenge);
+    
+    // Return EXACTLY the challenge string, nothing else
+    return new NextResponse(challenge, { 
+      status: 200,
+      headers: {
+        'Content-Type': 'text/plain',
+      }
+    });
+  } else {
+    return new NextResponse('Forbidden', { status: 403 });
   }
+}
+
+// ... Keep your existing POST code down here ...
 // 2. RECEIVING MESSAGES (Runs every time someone texts you)
 export async function POST(req: Request) {
   try {
