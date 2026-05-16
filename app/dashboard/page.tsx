@@ -4,10 +4,11 @@ import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '../../lib/supabase'; 
 import { 
-  MessageSquare, ShieldCheck, X, Send, Phone, Clock, 
-  Trash2, Activity, MessageCircle, AlertTriangle, 
-  UserCheck, StickyNote, User, Download, 
-  ShoppingBag, Loader2 // <-- Added new icons for Shopify Sync
+  MessageSquare, ShieldCheck, X, Send, Clock, 
+  Trash2, Activity, MessageCircle, UserCheck, 
+  StickyNote, User, Download, ShoppingBag, Loader2,
+  LayoutDashboard, LayoutTemplate, BarChart2, Settings, 
+  TrendingUp, Search, Calendar, Plus
 } from 'lucide-react';
 import { jsPDF } from "jspdf";
 
@@ -76,23 +77,22 @@ function AnimatedStarfield() {
     };
   }, []);
 
-  return <canvas ref={canvasRef} className="fixed inset-0 -z-20 pointer-events-none opacity-60" />;
+  return <canvas ref={canvasRef} className="fixed inset-0 -z-20 pointer-events-none opacity-40" />;
 }
 
 function NebulaBackground() {
   return (
     <div className="fixed inset-0 -z-30 pointer-events-none overflow-hidden">
-      <div className="absolute top-[-20%] left-[-10%] w-[60vw] h-[60vw] rounded-full bg-blue-800/10 blur-[150px] animate-[pulse-slow_15s_ease-in-out_infinite_alternate]" />
-      <div className="absolute bottom-[-20%] right-[-10%] w-[50vw] h-[50vw] rounded-full bg-indigo-900/10 blur-[150px] animate-[pulse-slow_20s_ease-in-out_infinite_alternate-reverse]" />
+      <div className="absolute top-[-20%] left-[-10%] w-[60vw] h-[60vw] rounded-full bg-blue-500/15 blur-[150px] animate-[pulse-slow_15s_ease-in-out_infinite_alternate]" />
+      <div className="absolute bottom-[-20%] right-[-10%] w-[50vw] h-[50vw] rounded-full bg-emerald-500/10 blur-[150px] animate-[pulse-slow_20s_ease-in-out_infinite_alternate-reverse]" />
     </div>
   );
 }
 
 const COLUMN_CONFIG: Record<string, { icon: any, hex: string, twText: string, twBg: string }> = {
-  'NEW': { icon: Phone, hex: '#06b6d4', twText: 'text-cyan-400', twBg: 'bg-cyan-500' },
-  'PENDING_AGENT': { icon: AlertTriangle, hex: '#ef4444', twText: 'text-red-400', twBg: 'bg-red-500' },
+  'NEW_ORDER': { icon: ShoppingBag, hex: '#10b981', twText: 'text-emerald-400', twBg: 'bg-emerald-500' },
   'HANDOFF': { icon: UserCheck, hex: '#eab308', twText: 'text-yellow-400', twBg: 'bg-yellow-500' },
-  'ACTIVE': { icon: Activity, hex: '#a855f7', twText: 'text-purple-400', twBg: 'bg-purple-500' },
+  'ACTIVE': { icon: Activity, hex: '#0ea5e9', twText: 'text-sky-400', twBg: 'bg-sky-500' },
   'RESOLVED': { icon: ShieldCheck, hex: '#84cc16', twText: 'text-lime-400', twBg: 'bg-lime-500' }
 };
 
@@ -102,6 +102,7 @@ export default function Dashboard() {
   const router = useRouter();
   const [isMounted, setIsMounted] = useState(false);
   const [leads, setLeads] = useState<any[]>([]);
+  const [totalSent, setTotalSent] = useState(0);
   const [draggedLead, setDraggedLead] = useState<string | null>(null);
   const [selectedLead, setSelectedLead] = useState<any | null>(null);
   const [messages, setMessages] = useState<any[]>([]);
@@ -110,7 +111,6 @@ export default function Dashboard() {
   const [isInternal, setIsInternal] = useState(false);
   const [editProfile, setEditProfile] = useState({ full_name: '', email: '', profile_notes: '' });
 
-  // ─── SHOPIFY SYNC STATE ───
   const [shopifyData, setShopifyData] = useState<any | null>(null);
   const [loadingShopify, setLoadingShopify] = useState(false);
 
@@ -131,13 +131,18 @@ export default function Dashboard() {
 
   useEffect(() => {
     fetchLeads();
+    fetchStats();
     const channel = supabase.channel('realtime-customers')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'customers' }, () => fetchLeads())
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, []);
 
-  // ─── TRIGGER DATA FETCH ON CARD CLICK ───
+  const fetchStats = async () => {
+    const { count } = await supabase.from('messages').select('*', { count: 'exact', head: true }).eq('is_outbound', true);
+    setTotalSent(count || 0);
+  };
+
   useEffect(() => {
     if (!selectedLead) {
       setShopifyData(null);
@@ -156,7 +161,6 @@ export default function Dashboard() {
     };
     fetchChatHistory();
 
-    // Fetch Shopify Data from your new API Route
     const fetchShopifyData = async () => {
       setLoadingShopify(true);
       try {
@@ -177,6 +181,7 @@ export default function Dashboard() {
     const msgChannel = supabase.channel('realtime-messages')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload: any) => {
         if (payload.new.customer_id === selectedLead.id) setMessages((prev) => [...prev, payload.new]);
+        if (payload.new.is_outbound) setTotalSent(prev => prev + 1);
       }).subscribe();
     return () => { supabase.removeChannel(msgChannel); };
   }, [selectedLead?.id]);
@@ -260,171 +265,293 @@ export default function Dashboard() {
   const chatMessages = messages.filter(m => !m.is_internal);
   const internalMemos = messages.filter(m => m.is_internal);
 
+  const newOrdersCount = leads.filter(l => l.status === 'NEW_ORDER').length;
+  const activeCount = leads.filter(l => l.status === 'ACTIVE').length;
+  const resolvedCount = leads.filter(l => l.status === 'RESOLVED').length;
+
   return (
-    <div className="min-h-screen text-zinc-200 p-6 md:p-10 font-sans relative overflow-x-hidden selection:bg-cyan-500/30">
-      <div className="fixed inset-0 -z-50 bg-gradient-to-br from-[#020617] via-[#0a0f24] to-[#161233]" />
+    <div className="flex h-screen text-zinc-100 font-sans relative overflow-hidden selection:bg-emerald-500/30">
+      <div className="fixed inset-0 -z-50 bg-gradient-to-br from-[#0F172A] via-[#1E293B] to-[#0F172A]" />
 
       <style dangerouslySetInnerHTML={{__html: `
         @keyframes pulse-slow { 0%, 100% { opacity: 0.3; transform: scale(1); } 50% { opacity: 0.6; transform: scale(1.05); } }
         @keyframes sweep { 0% { transform: translateX(-100%) skewX(-15deg); } 100% { transform: translateX(200%) skewX(-15deg); } }
         @keyframes fade-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        .custom-scrollbar::-webkit-scrollbar { width: 5px; }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 10px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.4); }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.15); border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.25); }
       `}} />
 
       <NebulaBackground />
       <AnimatedStarfield />
 
-      <div className="relative z-30 h-full flex flex-col max-w-[1800px] mx-auto">
-        <div className={`mb-10 transition-all duration-1000 transform ${isMounted ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4'}`}>
-          <h1 className="text-4xl md:text-5xl font-black tracking-tight text-white flex items-center gap-3 drop-shadow-[0_0_15px_rgba(255,255,255,0.1)]">
-            ChatRax <span className="text-cyan-400 drop-shadow-[0_0_10px_rgba(34,211,238,0.5)]">Pro</span>
-            <span className="h-3 w-3 rounded-full bg-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.8)] animate-pulse mt-2 inline-block"></span>
+      {/* ─── LEFT SIDEBAR NAVIGATION ─── */}
+      <div className="w-64 border-r border-white/10 bg-[#111827]/80 backdrop-blur-3xl flex flex-col z-40 shadow-[10px_0_30px_rgba(0,0,0,0.3)]">
+        <div className="h-20 flex items-center px-6 border-b border-white/10">
+          <h1 className="text-xl font-extrabold tracking-tight text-white flex items-center gap-2 drop-shadow-[0_0_10px_rgba(255,255,255,0.1)]">
+            <span className="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-400 to-sky-500 flex items-center justify-center shadow-[0_0_15px_rgba(16,185,129,0.4)]">
+               <MessageCircle className="w-5 h-5 text-white" />
+            </span>
+            ChatRax <span className="text-emerald-400">Pro</span>
           </h1>
-          <p className="text-zinc-400 mt-2 text-sm font-medium tracking-wide drop-shadow-md">Enterprise Intelligence & Action Command</p>
+        </div>
+        
+        <div className="flex-1 py-6 px-4 space-y-2">
+          <button className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-white/10 text-emerald-400 border border-white/10 shadow-inner transition-all duration-300 font-semibold text-sm">
+             <LayoutDashboard className="w-4 h-4" /> Dashboard
+          </button>
+          <button className="w-full flex items-center justify-between px-4 py-3 rounded-xl text-zinc-300 hover:bg-white/5 hover:text-white transition-all duration-300 font-medium text-sm">
+             <div className="flex items-center gap-3"><MessageSquare className="w-4 h-4" /> Conversations</div>
+             <span className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px] px-2 py-0.5 rounded-full font-bold">{leads.length}</span>
+          </button>
+          <button className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-zinc-300 hover:bg-white/5 hover:text-white transition-all duration-300 font-medium text-sm">
+             <LayoutTemplate className="w-4 h-4" /> Templates
+          </button>
+          <button className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-zinc-300 hover:bg-white/5 hover:text-white transition-all duration-300 font-medium text-sm">
+             <BarChart2 className="w-4 h-4" /> Analytics
+          </button>
+          <button className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-zinc-300 hover:bg-white/5 hover:text-white transition-all duration-300 font-medium text-sm">
+             <Settings className="w-4 h-4" /> Settings
+          </button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6 w-full flex-1 pb-8 items-start">
-          {COLUMNS.map((status, index) => {
-            const config = COLUMN_CONFIG[status];
-            const ColumnIcon = config.icon;
-            const colLeads = leads.filter(l => l.status === status);
-
-            return (
-              <div key={status} onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, status)}
-                className={`flex flex-col gap-4 h-full relative group transition-all duration-700 ease-out transform ${isMounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-12'}`} style={{ transitionDelay: `${index * 100}ms` }}>
-                <div className="flex items-center justify-between px-2">
-                  <h2 className="text-xs font-bold tracking-[0.15em] text-white uppercase drop-shadow-md">{status.replace('_', ' ')}</h2>
-                  <span className={`text-[10px] font-bold text-white ${config.twBg} bg-opacity-30 px-2.5 py-0.5 rounded-full border border-${config.hex}/50 backdrop-blur-md shadow-[0_0_12px_${config.hex}50]`}>{colLeads.length}</span>
-                </div>
-
-                <div className="flex items-center justify-between p-5 rounded-2xl border transition-all duration-500 relative overflow-hidden shadow-lg group-hover:-translate-y-1 group-hover:scale-[1.02] backdrop-blur-md"
-                  style={{ borderColor: `${config.hex}60`, boxShadow: `0 8px 32px 0 rgba(0, 0, 0, 0.3), inset 0 0 20px ${config.hex}15`, backgroundColor: `rgba(15, 23, 42, 0.4)` }}>
-                  <div className="flex items-center gap-3"><ColumnIcon className="w-6 h-6 animate-pulse" style={{ color: config.hex, filter: `drop-shadow(0 0 10px ${config.hex})` }} /></div>
-                  <span className="text-2xl font-black tracking-tighter transition-transform duration-300 group-hover:scale-110" style={{ color: config.hex, filter: `drop-shadow(0 0 12px ${config.hex})` }}>{colLeads.length}</span>
-                </div>
-
-                <div className={`flex flex-col gap-4 min-h-[65vh] rounded-2xl p-2 transition-all duration-300 ${draggedLead ? 'bg-white/5 border border-dashed border-white/30 backdrop-blur-sm' : 'border border-transparent'}`}>
-                  {colLeads.map((lead) => (
-                    <div key={lead.id} draggable onDragStart={(e) => handleDragStart(e, lead.id)} onClick={() => setSelectedLead(lead)} 
-                      className={`group/card relative bg-[#0f172a]/60 backdrop-blur-xl border border-white/10 rounded-2xl p-5 cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_15px_40px_rgba(0,0,0,0.5)] hover:border-white/20 overflow-hidden`}>
-                      <div className={`absolute left-0 top-0 bottom-0 w-1.5 transition-all duration-300 group-hover/card:w-2.5`} style={{ backgroundColor: config.hex, boxShadow: `0 0 20px ${config.hex}` }} />
-                      <div className="absolute inset-0 opacity-0 group-hover/card:opacity-100 transition-opacity duration-500 pointer-events-none" style={{ background: `linear-gradient(to right, ${config.hex}15, transparent)` }} />
-                      <div className="flex justify-between items-start mb-4 pl-2 relative z-10">
-                        <div className="flex items-center gap-2.5"><MessageCircle className="w-4 h-4 text-zinc-400 group-hover/card:text-white transition-colors duration-300" /><span className="font-sans text-sm tracking-wide text-white font-bold drop-shadow-md line-clamp-1">{lead.full_name || lead.phone_number}</span></div>
-                      </div>
-                      <div className="bg-black/30 border border-white/5 rounded-xl p-3.5 ml-2 shadow-inner group-hover/card:border-white/10 transition-colors duration-300">
-                        <p className="text-xs text-zinc-300 line-clamp-2 leading-relaxed font-medium">{lead.last_message || "No message content."}</p>
-                      </div>
-                      <div className="mt-4 flex items-center justify-between text-[10px] uppercase tracking-widest text-zinc-500 font-bold pl-2">
-                        <div className="flex items-center gap-1.5"><Clock className="w-3 h-3" />{new Date(lead.created_at).toLocaleDateString()}</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            );
-          })}
+        <div className="p-4 border-t border-white/10">
+          <div className="flex items-center gap-3 p-3 rounded-xl bg-white/5 border border-white/10 cursor-pointer hover:bg-white/10 transition-colors">
+             <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-sky-500 to-blue-600 flex items-center justify-center font-bold text-white shadow-[0_0_10px_rgba(14,165,233,0.4)]">
+               N
+             </div>
+             <div>
+               <p className="text-sm font-semibold text-white">Nasir Ahmed</p>
+               <p className="text-[10px] text-zinc-400 uppercase tracking-widest font-semibold">Admin</p>
+             </div>
+          </div>
         </div>
       </div>
 
-      <div className={`fixed top-0 right-0 h-full w-full md:w-[950px] bg-[#050b18]/95 backdrop-blur-3xl border-l border-white/10 z-50 transform transition-transform duration-500 flex flex-row shadow-[base_0_0_50px_rgba(0,0,0,0.8)] ${selectedLead ? 'translate-x-0' : 'translate-x-full'}`}>
+      {/* ─── MAIN CONTENT AREA ─── */}
+      <div className="flex-1 flex flex-col h-full overflow-hidden relative z-30">
+        
+        {/* TOP HEADER */}
+        <div className="h-20 flex items-center justify-between px-8 border-b border-white/10 bg-[#111827]/80 backdrop-blur-xl shrink-0">
+          <div>
+            <h2 className="text-xl font-bold text-white drop-shadow-md">Command Center</h2>
+            <p className="text-xs text-zinc-400 font-medium tracking-wide mt-0.5">Live overview of your Store & CRM activity</p>
+          </div>
+          <div className="flex items-center gap-4">
+             <div className="flex items-center gap-2 bg-[#1F2937] border border-white/10 rounded-lg px-4 py-2 text-sm font-medium text-zinc-200 shadow-inner cursor-pointer hover:bg-[#374151] transition-colors">
+                <Calendar className="w-4 h-4 text-emerald-400" /> Real-time Activity
+             </div>
+             <button className="bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-white font-semibold text-sm px-5 py-2 rounded-lg shadow-[0_0_20px_rgba(16,185,129,0.3)] hover:shadow-[0_0_25px_rgba(16,185,129,0.5)] transition-all flex items-center gap-2 hover:-translate-y-0.5 active:translate-y-0">
+                <Plus className="w-4 h-4" /> New Campaign
+             </button>
+          </div>
+        </div>
+
+        {/* SCROLLABLE DASHBOARD BODY */}
+        <div className="flex-1 overflow-y-auto custom-scrollbar p-8">
+            
+            {/* ─── KPI STAT CARDS ─── */}
+            <div className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8 transition-all duration-1000 transform ${isMounted ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4'}`}>
+              
+              {/* Card 1: New Orders */}
+              <div className="bg-[#1F2937]/70 backdrop-blur-2xl border border-white/10 rounded-2xl p-6 shadow-xl relative overflow-hidden group hover:bg-[#1F2937]/90 transition-colors">
+                 <div className="absolute top-0 left-0 w-1.5 h-full bg-emerald-500 shadow-[0_0_20px_rgba(16,185,129,0.8)]" />
+                 <div className="flex justify-between items-start mb-4 pl-2">
+                    <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 group-hover:scale-110 transition-transform"><ShoppingBag className="w-5 h-5"/></div>
+                    <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-1 rounded-full flex items-center gap-1"><TrendingUp className="w-3 h-3"/> +12%</span>
+                 </div>
+                 <p className="text-[11px] font-semibold tracking-widest text-zinc-400 uppercase mb-1 pl-2">New Orders</p>
+                 <h3 className="text-3xl font-bold text-white tracking-tight drop-shadow-sm pl-2 mt-1">{newOrdersCount}</h3>
+              </div>
+
+              {/* Card 2: Active */}
+              <div className="bg-[#1F2937]/70 backdrop-blur-2xl border border-white/10 rounded-2xl p-6 shadow-xl relative overflow-hidden group hover:bg-[#1F2937]/90 transition-colors">
+                 <div className="absolute top-0 left-0 w-1.5 h-full bg-sky-500 shadow-[0_0_20px_rgba(14,165,233,0.8)]" />
+                 <div className="flex justify-between items-start mb-4 pl-2">
+                    <div className="w-10 h-10 rounded-xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-400 group-hover:scale-110 transition-transform"><Activity className="w-5 h-5"/></div>
+                    <span className="text-[10px] font-bold text-sky-400 bg-sky-500/10 border border-sky-500/20 px-2 py-1 rounded-full flex items-center gap-1"><TrendingUp className="w-3 h-3"/> +8%</span>
+                 </div>
+                 <p className="text-[11px] font-semibold tracking-widest text-zinc-400 uppercase mb-1 pl-2">Active Contacts</p>
+                 <h3 className="text-3xl font-bold text-white tracking-tight drop-shadow-sm pl-2 mt-1">{activeCount}</h3>
+              </div>
+
+              {/* Card 3: Resolved */}
+              <div className="bg-[#1F2937]/70 backdrop-blur-2xl border border-white/10 rounded-2xl p-6 shadow-xl relative overflow-hidden group hover:bg-[#1F2937]/90 transition-colors">
+                 <div className="absolute top-0 left-0 w-1.5 h-full bg-lime-500 shadow-[0_0_20px_rgba(132,204,22,0.8)]" />
+                 <div className="flex justify-between items-start mb-4 pl-2">
+                    <div className="w-10 h-10 rounded-xl bg-lime-500/10 border border-lime-500/20 flex items-center justify-center text-lime-400 group-hover:scale-110 transition-transform"><ShieldCheck className="w-5 h-5"/></div>
+                    <span className="text-[10px] font-bold text-lime-400 bg-lime-500/10 border border-lime-500/20 px-2 py-1 rounded-full flex items-center gap-1"><TrendingUp className="w-3 h-3"/> +15%</span>
+                 </div>
+                 <p className="text-[11px] font-semibold tracking-widest text-zinc-400 uppercase mb-1 pl-2">Resolved Leads</p>
+                 <h3 className="text-3xl font-bold text-white tracking-tight drop-shadow-sm pl-2 mt-1">{resolvedCount}</h3>
+              </div>
+
+              {/* Card 4: Messages Sent */}
+              <div className="bg-[#1F2937]/70 backdrop-blur-2xl border border-white/10 rounded-2xl p-6 shadow-xl relative overflow-hidden group hover:bg-[#1F2937]/90 transition-colors">
+                 <div className="absolute top-0 left-0 w-1.5 h-full bg-amber-500 shadow-[0_0_20px_rgba(245,158,11,0.8)]" />
+                 <div className="flex justify-between items-start mb-4 pl-2">
+                    <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 group-hover:scale-110 transition-transform"><Send className="w-5 h-5 ml-0.5"/></div>
+                    <span className="text-[10px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-1 rounded-full flex items-center gap-1"><TrendingUp className="w-3 h-3"/> Steady</span>
+                 </div>
+                 <p className="text-[11px] font-semibold tracking-widest text-zinc-400 uppercase mb-1 pl-2">Messages Sent</p>
+                 <h3 className="text-3xl font-bold text-white tracking-tight drop-shadow-sm pl-2 mt-1">{totalSent}</h3>
+              </div>
+
+            </div>
+
+            {/* ─── ACTION BOARD (KANBAN) ─── */}
+            <div className="bg-[#111827]/60 backdrop-blur-xl border border-white/10 rounded-3xl p-6 shadow-2xl">
+              <div className="flex items-center justify-between mb-6 px-2">
+                 <h3 className="text-lg font-bold text-white drop-shadow-sm">Live Action Board</h3>
+                 <div className="flex gap-2">
+                    <div className="bg-[#1F2937] border border-white/10 hover:bg-[#374151] cursor-pointer transition-colors rounded-lg px-4 py-2 flex items-center gap-2 text-xs font-semibold text-zinc-300"><Search className="w-3.5 h-3.5 text-zinc-400"/> Filter</div>
+                 </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
+                {COLUMNS.map((status, index) => {
+                  const config = COLUMN_CONFIG[status];
+                  const ColumnIcon = config.icon;
+                  const colLeads = leads.filter(l => l.status === status);
+
+                  return (
+                    <div key={status} onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, status)}
+                      className={`flex flex-col gap-4 h-full relative group transition-all duration-700 ease-out transform ${isMounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-12'}`} style={{ transitionDelay: `${index * 100}ms` }}>
+                      
+                      <div className="flex items-center justify-between p-4 rounded-xl border border-white/10 transition-all duration-500 relative overflow-hidden shadow-md bg-[#1F2937]/80 backdrop-blur-md">
+                        <div className="flex items-center gap-2.5">
+                           <ColumnIcon className="w-4 h-4" style={{ color: config.hex, filter: `drop-shadow(0 0 5px ${config.hex})` }} />
+                           <h2 className="text-xs font-bold tracking-widest text-white uppercase">{status.replace('_', ' ')}</h2>
+                        </div>
+                        <span className={`text-[10px] font-bold text-white ${config.twBg} bg-opacity-20 px-2.5 py-0.5 rounded-full border border-${config.hex}/30`}>{colLeads.length}</span>
+                      </div>
+
+                      <div className={`flex flex-col gap-3 min-h-[40vh] rounded-xl p-1.5 transition-all duration-300 custom-scrollbar ${draggedLead ? 'bg-white/5 border border-dashed border-white/20' : 'border border-transparent'}`}>
+                        {colLeads.map((lead) => (
+                          <div key={lead.id} draggable onDragStart={(e) => handleDragStart(e, lead.id)} onClick={() => setSelectedLead(lead)} 
+                            className={`group/card relative bg-[#374151]/60 backdrop-blur-md border border-white/10 rounded-xl p-4 cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_10px_30px_rgba(0,0,0,0.4)] hover:bg-[#4B5563]/60 hover:border-white/20 overflow-hidden`}>
+                            <div className={`absolute left-0 top-0 bottom-0 w-1 transition-all duration-300 group-hover/card:w-1.5`} style={{ backgroundColor: config.hex, boxShadow: `0 0 15px ${config.hex}` }} />
+                            
+                            <div className="flex justify-between items-start mb-3 pl-1 relative z-10">
+                              <div className="flex items-center gap-2"><span className="font-sans text-sm tracking-wide text-white font-semibold drop-shadow-sm line-clamp-1">{lead.full_name || lead.phone_number}</span></div>
+                            </div>
+                            
+                            <div className="bg-[#111827]/40 rounded-lg p-3 ml-1 border border-white/5 group-hover/card:border-white/10 transition-colors duration-300 shadow-inner">
+                              <p className="text-[11px] text-zinc-300 line-clamp-2 leading-relaxed">{lead.last_message || "No message content."}</p>
+                            </div>
+                            
+                            <div className="mt-3 flex items-center justify-between text-[9px] uppercase tracking-widest text-zinc-400 font-semibold pl-1">
+                              <div className="flex items-center gap-1.5"><Clock className="w-3 h-3 text-zinc-500" />{new Date(lead.created_at).toLocaleDateString()}</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            
+        </div>
+      </div>
+
+      {/* ─── SLIDE-OUT CHAT & PROFILING PANE ─── */}
+      <div className={`fixed top-0 right-0 h-full w-full md:w-[950px] bg-[#111827]/95 backdrop-blur-3xl border-l border-white/10 z-50 transform transition-transform duration-500 flex flex-row shadow-[-20px_0_50px_rgba(0,0,0,0.5)] ${selectedLead ? 'translate-x-0' : 'translate-x-full'}`}>
         {selectedLead && (
           <>
-            <div className="flex-1 flex flex-col border-r border-white/5 overflow-hidden">
-                <div className="flex items-center justify-between p-6 border-b border-white/10 shrink-0 relative overflow-hidden bg-white/5">
-                    <div className="absolute inset-0 bg-gradient-to-r from-cyan-500/10 to-transparent opacity-50"></div>
+            <div className="flex-1 flex flex-col border-r border-white/10 overflow-hidden">
+                <div className="flex items-center justify-between p-6 border-b border-white/10 shrink-0 relative overflow-hidden bg-[#1F2937]/50">
+                    <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/5 to-transparent opacity-50"></div>
                     <div className="flex items-center gap-4 relative z-10">
-                        <div className="w-11 h-11 rounded-full bg-gradient-to-tr from-cyan-500 to-blue-500 flex items-center justify-center shadow-[0_0_20px_rgba(6,182,212,0.4)] text-white"><MessageSquare className="w-5 h-5"/></div>
+                        <div className="w-11 h-11 rounded-full bg-gradient-to-tr from-emerald-500 to-teal-500 flex items-center justify-center shadow-[0_0_20px_rgba(16,185,129,0.4)] text-white"><MessageSquare className="w-5 h-5"/></div>
                         <div>
                             <h3 className="text-white font-bold text-lg">{selectedLead.full_name || selectedLead.phone_number}</h3>
-                            <p className="text-[10px] text-cyan-400 font-bold tracking-widest uppercase mt-0.5 flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.9)] animate-pulse"></span>Encrypted Connection</p>
+                            <p className="text-[10px] text-emerald-400 font-bold tracking-widest uppercase mt-0.5 flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.9)] animate-pulse"></span>Encrypted Connection</p>
                         </div>
                     </div>
                     <div className="flex items-center gap-3 relative z-10">
-                        {selectedLead.status === 'PENDING_AGENT' && <button onClick={() => handleTakeOver(selectedLead.id)} className="px-4 py-2 bg-red-500/20 text-red-300 border border-red-500/40 hover:border-red-400 hover:bg-red-500/30 rounded-full text-[10px] font-bold uppercase transition-all duration-300 shadow-[0_0_15px_rgba(239,68,68,0.2)] hover:shadow-[0_0_20px_rgba(239,68,68,0.4)] hover:scale-105 active:scale-95">Take Over</button>}
+                        {selectedLead.status === 'NEW_ORDER' && <button onClick={() => handleTakeOver(selectedLead.id)} className="px-4 py-2 bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:border-emerald-400 hover:bg-emerald-500/30 rounded-full text-[10px] font-bold uppercase transition-all duration-300 shadow-[0_0_15px_rgba(16,185,129,0.2)] hover:shadow-[0_0_20px_rgba(16,185,129,0.4)] hover:scale-105 active:scale-95">Take Over</button>}
                         <button onClick={() => handleResolveChat(selectedLead.id)} className="px-4 py-2 bg-lime-500/20 text-lime-300 border border-lime-500/40 hover:border-lime-400 hover:bg-lime-500/30 rounded-full text-[10px] font-bold uppercase transition-all duration-300 shadow-[0_0_15px_rgba(132,204,22,0.2)] hover:shadow-[0_0_20px_rgba(132,204,22,0.4)] hover:scale-105 active:scale-95">Resolve</button>
                         <button onClick={() => setSelectedLead(null)} className="p-2 hover:bg-white/10 hover:rotate-90 rounded-full text-zinc-300 transition-all duration-300"><X className="w-5 h-5"/></button>
                     </div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-6 custom-scrollbar bg-black/20">
+                <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-6 custom-scrollbar bg-[#0B1120]/40">
                     {chatMessages.length === 0 ? <div className="flex-1 flex items-center justify-center text-zinc-500 text-xs font-sans tracking-widest uppercase">No customer conversation history</div> :
                         chatMessages.map((msg, i) => (
                         <div key={i} className={`flex flex-col max-w-[85%] animate-[fade-in_0.3s_ease-out] ${msg.is_outbound ? 'self-end items-end' : 'self-start items-start'}`}>
-                            <div className={`p-4 rounded-2xl text-sm leading-relaxed shadow-xl backdrop-blur-md ${msg.is_outbound ? 'bg-gradient-to-br from-cyan-600 to-blue-600 text-white rounded-br-sm shadow-[0_8px_25px_rgba(6,182,212,0.3)] border border-cyan-400/30' : 'bg-[#1e293b]/80 border border-white/10 text-zinc-100 rounded-bl-sm shadow-[0_8px_25px_rgba(0,0,0,0.3)]'}`}>{msg.content}</div>
+                            <div className={`p-4 rounded-2xl text-sm leading-relaxed shadow-xl backdrop-blur-md ${msg.is_outbound ? 'bg-gradient-to-br from-emerald-600 to-teal-600 text-white rounded-br-sm shadow-[0_8px_25px_rgba(16,185,129,0.3)] border border-emerald-400/30' : 'bg-[#1F2937] border border-white/10 text-zinc-100 rounded-bl-sm shadow-[0_8px_25px_rgba(0,0,0,0.3)]'}`}>{msg.content}</div>
                             <span className="text-[10px] text-zinc-500 font-bold tracking-widest uppercase mt-2 px-1">{new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                         </div>
                     ))}
                     <div ref={messagesEndRef} />
                 </div>
 
-                <div className="p-6 border-t border-white/10 bg-[#030712]/60 backdrop-blur-xl shrink-0">
+                <div className="p-6 border-t border-white/10 bg-[#111827]/90 backdrop-blur-xl shrink-0">
                     <div className="flex gap-2 mb-3">
-                        <button type="button" onClick={() => setIsInternal(!isInternal)} className={`text-[10px] font-bold px-4 py-1.5 rounded-full border transition-all duration-300 hover:scale-105 active:scale-95 ${isInternal ? 'bg-amber-500 text-black border-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.5)]' : 'text-zinc-500 border-white/20 hover:text-amber-400 hover:border-amber-400/50 hover:bg-amber-500/10'}`}>Internal Note</button>
+                        <button type="button" onClick={() => setIsInternal(!isInternal)} className={`text-[10px] font-bold px-4 py-1.5 rounded-full border transition-all duration-300 hover:scale-105 active:scale-95 ${isInternal ? 'bg-amber-500 text-black border-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.5)]' : 'text-zinc-400 border-white/20 hover:text-amber-400 hover:border-amber-400/50 hover:bg-amber-500/10'}`}>Internal Note</button>
                     </div>
                     <form onSubmit={handleSendMessage} className="relative flex items-center group/form">
-                        <input type="text" value={newMessage} onChange={(e) => setNewMessage(e.target.value)} placeholder={isInternal ? "Add a private team memo..." : "Draft a secure message..."} className={`w-full bg-black/40 border rounded-full pl-6 pr-14 py-4 text-sm focus:outline-none text-white transition-all duration-300 shadow-inner ${isInternal ? 'border-amber-500/50 focus:ring-1 focus:ring-amber-500/80 placeholder-amber-500/50' : 'border-white/20 focus:ring-1 focus:ring-cyan-500/80 focus:border-cyan-500/80 placeholder-zinc-500'}`} />
-                        <button type="submit" disabled={!newMessage.trim()} className={`absolute right-2 p-3 rounded-full transition-all duration-300 disabled:opacity-50 disabled:grayscale disabled:scale-100 hover:scale-110 active:scale-90 ${isInternal ? 'bg-amber-500 text-black shadow-[0_0_15px_rgba(245,158,11,0.5)] hover:bg-amber-400' : 'bg-gradient-to-r from-cyan-400 to-blue-500 hover:from-cyan-300 hover:to-blue-400 text-white shadow-[0_0_20px_rgba(6,182,212,0.5)]'}`}><Send className="w-4 h-4 ml-0.5"/></button>
+                        <input type="text" value={newMessage} onChange={(e) => setNewMessage(e.target.value)} placeholder={isInternal ? "Add a private team memo..." : "Draft a secure message..."} className={`w-full bg-[#1F2937]/80 border rounded-full pl-6 pr-14 py-4 text-sm focus:outline-none text-white transition-all duration-300 shadow-inner ${isInternal ? 'border-amber-500/50 focus:ring-1 focus:ring-amber-500/80 placeholder-amber-500/50' : 'border-white/20 focus:ring-1 focus:ring-emerald-500/80 focus:border-emerald-500/80 placeholder-zinc-400'}`} />
+                        <button type="submit" disabled={!newMessage.trim()} className={`absolute right-2 p-3 rounded-full transition-all duration-300 disabled:opacity-50 disabled:grayscale disabled:scale-100 hover:scale-110 active:scale-90 ${isInternal ? 'bg-amber-500 text-black shadow-[0_0_15px_rgba(245,158,11,0.5)] hover:bg-amber-400' : 'bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-white shadow-[0_0_20px_rgba(16,185,129,0.5)]'}`}><Send className="w-4 h-4 ml-0.5"/></button>
                     </form>
                 </div>
             </div>
 
             {/* ─── RIGHT PANE (SCROLLABLE PROFILING & E-COMMERCE) ─── */}
-            <div className="w-[380px] bg-[#020617]/80 backdrop-blur-xl border-l border-white/5 flex flex-col overflow-y-auto custom-scrollbar shadow-inner">
+            <div className="w-[380px] bg-[#111827]/90 backdrop-blur-xl border-l border-white/10 flex flex-col overflow-y-auto custom-scrollbar shadow-inner">
                 
                 <div className="p-8 pb-6 border-b border-white/10 shrink-0">
-                    <h4 className="text-[10px] font-black text-white uppercase tracking-widest mb-5 flex items-center gap-2 drop-shadow-md"><User className="w-4 h-4 text-cyan-400"/> Identity Profile</h4>
+                    <h4 className="text-[10px] font-bold text-white uppercase tracking-widest mb-5 flex items-center gap-2 drop-shadow-md"><User className="w-4 h-4 text-emerald-400"/> Identity Profile</h4>
                     <div className="space-y-4">
-                        <div className="space-y-1.5"><label className="text-[9px] font-bold text-cyan-400 uppercase tracking-widest ml-1">Assigned Name</label><input value={editProfile.full_name} onChange={(e) => setEditProfile({...editProfile, full_name: e.target.value})} onBlur={handleUpdateProfile} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-xs text-white focus:border-cyan-400 focus:bg-white/10 outline-none transition-all duration-300" placeholder="Enter Full Name" /></div>
-                        <div className="space-y-1.5"><label className="text-[9px] font-bold text-cyan-400 uppercase tracking-widest ml-1">Email Hash</label><input value={editProfile.email} onChange={(e) => setEditProfile({...editProfile, email: e.target.value})} onBlur={handleUpdateProfile} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-xs text-white focus:border-cyan-400 focus:bg-white/10 outline-none transition-all duration-300" placeholder="email@client.com" /></div>
-                        <div className="space-y-1.5"><label className="text-[9px] font-bold text-cyan-400 uppercase tracking-widest ml-1">Deep Notes</label><textarea rows={2} value={editProfile.profile_notes} onChange={(e) => setEditProfile({...editProfile, profile_notes: e.target.value})} onBlur={handleUpdateProfile} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-xs text-white focus:border-cyan-400 focus:bg-white/10 outline-none resize-none transition-all duration-300 custom-scrollbar" placeholder="Private notes..." /></div>
+                        <div className="space-y-1.5"><label className="text-[9px] font-bold text-emerald-400 uppercase tracking-widest ml-1">Assigned Name</label><input value={editProfile.full_name} onChange={(e) => setEditProfile({...editProfile, full_name: e.target.value})} onBlur={handleUpdateProfile} className="w-full bg-[#1F2937] border border-white/10 rounded-xl px-4 py-3 text-xs text-white focus:border-emerald-400 focus:bg-[#374151] outline-none transition-all duration-300" placeholder="Enter Full Name" /></div>
+                        <div className="space-y-1.5"><label className="text-[9px] font-bold text-emerald-400 uppercase tracking-widest ml-1">Email Hash</label><input value={editProfile.email} onChange={(e) => setEditProfile({...editProfile, email: e.target.value})} onBlur={handleUpdateProfile} className="w-full bg-[#1F2937] border border-white/10 rounded-xl px-4 py-3 text-xs text-white focus:border-emerald-400 focus:bg-[#374151] outline-none transition-all duration-300" placeholder="email@client.com" /></div>
+                        <div className="space-y-1.5"><label className="text-[9px] font-bold text-emerald-400 uppercase tracking-widest ml-1">Deep Notes</label><textarea rows={2} value={editProfile.profile_notes} onChange={(e) => setEditProfile({...editProfile, profile_notes: e.target.value})} onBlur={handleUpdateProfile} className="w-full bg-[#1F2937] border border-white/10 rounded-xl px-4 py-3 text-xs text-white focus:border-emerald-400 focus:bg-[#374151] outline-none resize-none transition-all duration-300 custom-scrollbar" placeholder="Private notes..." /></div>
                     </div>
                 </div>
 
                 {/* ─── LIVE E-COMMERCE SYNC MODULE ─── */}
-                <div className="p-8 py-6 border-b border-white/10 shrink-0 bg-gradient-to-b from-[#020617] to-emerald-950/20">
-                    <h4 className="text-[10px] font-black text-emerald-400 uppercase tracking-widest mb-5 flex items-center gap-2 drop-shadow-md">
+                <div className="p-8 py-6 border-b border-white/10 shrink-0 bg-gradient-to-b from-[#111827] to-emerald-950/20">
+                    <h4 className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest mb-5 flex items-center gap-2 drop-shadow-md">
                         <ShoppingBag className="w-4 h-4 text-emerald-400"/> Live Store Sync
                     </h4>
                     
                     {loadingShopify ? (
-                        <div className="p-5 bg-white/5 border border-white/10 rounded-xl flex items-center justify-center gap-3 text-xs text-zinc-400 animate-pulse shadow-inner">
+                        <div className="p-5 bg-[#1F2937]/50 border border-white/10 rounded-xl flex items-center justify-center gap-3 text-xs text-zinc-400 animate-pulse shadow-inner">
                             <Loader2 className="w-4 h-4 animate-spin text-emerald-500" /> Fetching Shopify History...
                         </div>
                     ) : shopifyData?.found ? (
                         <div className="space-y-4 animate-[fade-in_0.4s_ease-out]">
                             <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-5 shadow-[0_5px_15px_rgba(16,185,129,0.1)] backdrop-blur-sm">
                                 <p className="text-[9px] text-emerald-400/80 uppercase tracking-widest font-bold mb-1">Lifetime Value</p>
-                                <p className="text-2xl font-black text-emerald-300 drop-shadow-md">{shopifyData.totalSpent}</p>
+                                <p className="text-2xl font-bold text-emerald-300 drop-shadow-md">{shopifyData.totalSpent}</p>
                             </div>
                             <div className="space-y-2">
                                 <p className="text-[9px] text-zinc-400 uppercase tracking-widest font-bold mb-3 mt-2 pl-1">Recent Orders</p>
                                 {shopifyData.recentOrders.map((order: any, idx: number) => (
-                                    <div key={idx} className="bg-white/5 border border-white/10 rounded-xl p-3.5 flex justify-between items-center hover:bg-white/10 transition-colors shadow-sm">
+                                    <div key={idx} className="bg-[#1F2937] border border-white/10 rounded-xl p-3.5 flex justify-between items-center hover:bg-[#374151] transition-colors shadow-sm">
                                         <div>
-                                            <p className="text-xs font-bold text-white mb-1">{order.orderName}</p>
+                                            <p className="text-xs font-semibold text-white mb-1">{order.orderName}</p>
                                             <p className="text-[9px] text-zinc-400 uppercase tracking-widest">{order.date} • <span className="text-emerald-400/80">{order.fulfillmentStatus || 'UNFULFILLED'}</span></p>
                                         </div>
-                                        <span className="text-sm font-black text-emerald-400">{order.total}</span>
+                                        <span className="text-sm font-bold text-emerald-400">{order.total}</span>
                                     </div>
                                 ))}
                             </div>
                         </div>
                     ) : (
-                        <div className="p-5 bg-white/5 border border-white/10 rounded-xl text-center shadow-inner">
-                            <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">No linked Shopify customer found</p>
+                        <div className="p-5 bg-[#1F2937]/50 border border-white/10 rounded-xl text-center shadow-inner">
+                            <p className="text-[10px] text-zinc-400 uppercase tracking-widest font-bold">No linked Shopify customer found</p>
                         </div>
                     )}
                 </div>
 
                 <div className="p-8 pt-6 flex-1 flex flex-col min-h-[250px]">
-                    <h4 className="text-[10px] font-black text-amber-400 uppercase tracking-widest mb-4 flex items-center gap-2 drop-shadow-md"><StickyNote className="w-4 h-4"/> Internal Memos</h4>
+                    <h4 className="text-[10px] font-bold text-amber-400 uppercase tracking-widest mb-4 flex items-center gap-2 drop-shadow-md"><StickyNote className="w-4 h-4"/> Internal Memos</h4>
                     <div className="space-y-3">
                         {internalMemos.length === 0 ? (
-                            <div className="p-4 border border-white/10 rounded-xl bg-white/5 text-center transition-all"><p className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">No internal memos</p></div>
+                            <div className="p-4 border border-white/10 rounded-xl bg-[#1F2937]/50 text-center transition-all"><p className="text-[10px] text-zinc-400 uppercase tracking-widest font-bold">No internal memos</p></div>
                         ) : (
                             internalMemos.map((memo, i) => (
                                 <div key={memo.id} className="group relative bg-amber-500/10 border border-amber-500/30 hover:border-amber-500/50 hover:bg-amber-500/20 rounded-xl p-3 shadow-lg backdrop-blur-sm transition-all duration-300 hover:-translate-y-0.5">
@@ -437,9 +564,9 @@ export default function Dashboard() {
                     </div>
                 </div>
 
-                <div className="p-8 pt-0 mt-auto shrink-0 border-t border-white/10 bg-[#020617]/90 backdrop-blur-md sticky bottom-0 z-10">
-                    <button type="button" onClick={handleExportPDF} className="mt-6 group relative overflow-hidden w-full flex items-center justify-center gap-2 py-4 bg-white/5 hover:bg-cyan-500/20 border border-white/10 hover:border-cyan-400/50 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all duration-300 text-zinc-300 hover:text-white hover:shadow-[0_8px_25px_rgba(6,182,212,0.3)] hover:-translate-y-1 active:translate-y-0 active:scale-95">
-                        <div className="absolute inset-0 w-[50%] h-full bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-[150%] group-hover:animate-[sweep_1.5s_ease-in-out_infinite]" />
+                <div className="p-8 pt-0 mt-auto shrink-0 border-t border-white/10 bg-[#111827]/90 backdrop-blur-md sticky bottom-0 z-10">
+                    <button type="button" onClick={handleExportPDF} className="mt-6 group relative overflow-hidden w-full flex items-center justify-center gap-2 py-4 bg-[#1F2937] hover:bg-emerald-500/20 border border-white/10 hover:border-emerald-400/50 rounded-2xl text-[10px] font-bold uppercase tracking-widest transition-all duration-300 text-zinc-300 hover:text-white hover:shadow-[0_8px_25px_rgba(16,185,129,0.3)] hover:-translate-y-1 active:translate-y-0 active:scale-95">
+                        <div className="absolute inset-0 w-[50%] h-full bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-[150%] group-hover:animate-[sweep_1.5s_ease-in-out_infinite]" />
                         <Download className="w-4 h-4 relative z-10 transition-transform duration-300 group-hover:-translate-y-1"/> <span className="relative z-10">Export Intelligence (PDF)</span>
                     </button>
                 </div>

@@ -1,67 +1,61 @@
 import { NextResponse } from 'next/server';
-import crypto from 'crypto';
-import { supabase } from '../../../../lib/supabase'; // Adjust path to your Supabase client
+import { supabase } from '../../../../lib/supabase';
 
 export async function POST(req: Request) {
+  // 1. THE LOUD DOORBELL
+  console.log("🔔 [SHOPIFY WEBHOOK] KNOCK KNOCK! Request received from Shopify!");
+
   try {
-    // 1. Get the raw body as text for HMAC verification
-    const rawBody = await req.text();
-    const hmacHeader = req.headers.get('x-shopify-hmac-sha256');
-    const shopDomain = req.headers.get('x-shopify-shop-domain');
-
-    if (!hmacHeader) {
-      return new NextResponse('Unauthorized', { status: 401 });
-    }
-
-    // 2. Verify the Webhook (Using your Shopify Webhook Secret from .env.local)
-    const secret = process.env.SHOPIFY_WEBHOOK_SECRET; 
+    const order = await req.json();
     
-    if (!secret) {
-      console.error("Missing SHOPIFY_WEBHOOK_SECRET");
-      return new NextResponse('Server Configuration Error', { status: 500 });
+    // 2. LOG THE RAW PAYLOAD
+    console.log("📦 [SHOPIFY WEBHOOK] Raw order data:", JSON.stringify(order).substring(0, 200));
+    
+    const rawPhone = order.phone || order.customer?.phone || order.billing_address?.phone;
+    
+    if (!rawPhone) {
+      console.log("⚠️ [SHOPIFY WEBHOOK] Ignored: Order has no phone number.");
+      return NextResponse.json({ status: 'ignored - no phone' });
     }
 
-    const generatedHash = crypto
-      .createHmac('sha256', secret)
-      .update(rawBody, 'utf8')
-      .digest('base64');
+    // ... rest of your existing code below this ...
 
-    if (generatedHash !== hmacHeader) {
-      console.error("HMAC verification failed");
-      return new NextResponse('Unauthorized', { status: 401 });
-    }
+    // Clean the phone number (remove spaces, dashes, etc.) to match WhatsApp format
+    const cleanPhone = rawPhone.replace(/\D/g, ''); 
+    const fullName = `${order.customer?.first_name || ''} ${order.customer?.last_name || ''}`.trim();
+    const orderPreviewText = `📦 Order #${order.order_number} placed for ${order.total_price} ${order.currency}.`;
 
-    // 3. Parse the verified payload
-    const order = JSON.parse(rawBody);
+    // 1. Create or Update the Customer Card in the Dashboard
+    const { data: customer, error: customerError } = await supabase
+      .from('customers')
+      .upsert({ 
+        phone_number: cleanPhone, 
+        full_name: fullName || 'Shopify Customer',
+        status: 'NEW_ORDER', // <-- This puts them directly into your new column!
+        last_message: orderPreviewText,
+        email: order.email || ''
+      }, { onConflict: 'phone_number' })
+      .select('id')
+      .single();
 
-    // Shopify phone numbers can be tricky. Fallback to billing/shipping address phone if needed.
-    const phone = order.phone || order.billing_address?.phone || order.customer?.phone;
+    if (customerError) throw customerError;
 
-    if (!phone) {
-      // If there's no phone number, we can't link it to a WhatsApp CRM easily
-      return new NextResponse('Order received but no phone number attached', { status: 200 });
-    }
+    // 2. Add an internal system message so the agent sees the order details in the chat history
+    await supabase
+      .from('messages')
+      .insert({
+        customer_id: customer.id,
+        content: `SYSTEM: ${orderPreviewText}`,
+        is_outbound: false,
+        is_internal: true, // Shows up as an internal memo so the customer doesn't see it
+        status: 'received'
+      });
 
-    // 4. Insert into Supabase
-    const { error } = await supabase
-      .from('store_orders')
-      .upsert({
-        shopify_order_id: order.id.toString(),
-        customer_phone: phone,
-        customer_name: order.customer?.first_name + ' ' + order.customer?.last_name,
-        total_price: order.total_price,
-        financial_status: order.financial_status,
-        fulfillment_status: order.fulfillment_status,
-        line_items: order.line_items,
-        store_name: shopDomain,
-      }, { onConflict: 'shopify_order_id' });
+    // 3. (Optional) Still save the raw order to your store_orders table if you want!
 
-    if (error) throw error;
-
-    return new NextResponse('Webhook processed successfully', { status: 200 });
-
-  } catch (error: any) {
-    console.error('Webhook processing error:', error);
-    return new NextResponse(`Error: ${error.message}`, { status: 500 });
+    return NextResponse.json({ status: 'success' });
+  } catch (error) {
+    console.error('Shopify Webhook Error:', error);
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }

@@ -1,12 +1,16 @@
 import type { Metadata } from "next";
-import { Space_Grotesk } from "next/font/google";
+import { Inter } from "next/font/google";
 import "./globals.css";
 
-const spaceGrotesk = Space_Grotesk({ subsets: ["latin"] });
+// This imports the font and optimizes it perfectly for your app
+const inter = Inter({ 
+  subsets: ["latin"],
+  weight: ['400', '500', '600', '700', '800', '900'] 
+});
 
 export const metadata: Metadata = {
-  title: "Chatrax",
-  description: "WhatsApp CRM",
+  title: "ChatRax Pro",
+  description: "Enterprise Intelligence & Action Command",
 };
 
 export default function RootLayout({
@@ -16,7 +20,8 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={spaceGrotesk.className}>{children}</body>
+      {/* This injects the custom font into the entire body of your app */}
+      <body className={inter.className}>{children}</body>
     </html>
   );
 }
