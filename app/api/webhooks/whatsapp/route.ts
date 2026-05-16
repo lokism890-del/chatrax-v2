@@ -1,22 +1,25 @@
 import { NextResponse } from 'next/server';
-import { supabase } from '../../../../lib/supabase';
+import { supabase } from '../../../../lib/supabase'; // Adjust this path if your lib folder is somewhere else
 
-// THIS IS THE MAGIC LINE: It completely disables Next.js caching for this route
+// CRITICAL: Completely disables Next.js caching for this specific route so Meta's verification works every time.
 export const dynamic = 'force-dynamic';
 
-// 1. META VERIFICATION
+// ============================================================================
+// 1. META VERIFICATION (Runs once when you click "Verify and Save" in Meta)
+// ============================================================================
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const mode = searchParams.get('hub.mode');
   const token = searchParams.get('hub.verify_token');
   const challenge = searchParams.get('hub.challenge');
 
+  // This must perfectly match what you put in Vercel Environment Variables and the Meta dashboard
   const verifyToken = process.env.META_WEBHOOK_VERIFY_TOKEN;
 
   if (mode === 'subscribe' && token === verifyToken) {
     console.log('Meta Webhook Verified! Challenge sent:', challenge);
     
-    // Return EXACTLY the challenge string, nothing else
+    // Explicitly returning raw text to satisfy Meta's strict requirements
     return new NextResponse(challenge, { 
       status: 200,
       headers: {
@@ -24,16 +27,19 @@ export async function GET(req: Request) {
       }
     });
   } else {
+    console.error('Meta Verification Failed. Tokens did not match.');
     return new NextResponse('Forbidden', { status: 403 });
   }
 }
 
-// ... Keep your existing POST code down here ...
-// 2. RECEIVING MESSAGES (Runs every time someone texts you)
+// ============================================================================
+// 2. RECEIVING MESSAGES (Runs every time someone texts your WhatsApp number)
+// ============================================================================
 export async function POST(req: Request) {
   try {
     const body = await req.json();
 
+    // Verify this is actually coming from WhatsApp
     if (body.object === 'whatsapp_business_account') {
       for (const entry of body.entry) {
         for (const change of entry.changes) {
@@ -48,7 +54,7 @@ export async function POST(req: Request) {
             const text = message.text?.body || 'Sent an attachment/unsupported message type';
             const name = contact.profile.name || 'Unknown User';
 
-            // 1. Check if this customer already exists in Supabase
+            // 1. Check if this customer already exists in your Supabase CRM
             let { data: customer } = await supabase
               .from('customers')
               .select('id')
@@ -71,7 +77,7 @@ export async function POST(req: Request) {
               if (error) console.error("Error creating customer:", error);
               customer = newCustomer;
             } else {
-              // Existing customer: Update their last message and move them to the "NEW" column so you see it
+              // Existing customer: Update their last message and move their card back to the "NEW" column
               await supabase
                 .from('customers')
                 .update({ last_message: text, status: 'NEW' })
@@ -93,6 +99,7 @@ export async function POST(req: Request) {
           }
         }
       }
+      // Meta requires a 200 OK response immediately so it knows you received the message
       return new NextResponse('EVENT_RECEIVED', { status: 200 });
     } else {
       return new NextResponse('Not Found', { status: 404 });
