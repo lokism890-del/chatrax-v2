@@ -11,19 +11,14 @@ export async function GET(req: Request) {
 
     const VERIFY_TOKEN = process.env.META_VERIFY_TOKEN;
 
-    console.log("🔍 [META WEBHOOK GET] Received validation request.");
-    console.log("Mode:", mode, "Token Provided:", token);
-
     if (mode === "subscribe" && token === VERIFY_TOKEN) {
       console.log("🟢 Webhook Verified Successfully!");
-      // Meta requires the raw challenge string back directly without any JSON quotes
       return new NextResponse(challenge, {
         status: 200,
         headers: { 'Content-Type': 'text/plain' },
       });
     }
 
-    console.error("❌ Token mismatch or missing subscribe mode.");
     return new NextResponse("Forbidden", { status: 403 });
   } catch (err) {
     console.error("GET Error:", err);
@@ -31,7 +26,7 @@ export async function GET(req: Request) {
   }
 }
 
-// 2. RECEIVING LIVE CUSTOMER MESSAGES
+// 2. RECEIVING LIVE CUSTOMER MESSAGES, RECEIPTS, & MEDIA
 export async function POST(req: Request) {
   try {
     const body = await req.json();
@@ -43,16 +38,68 @@ export async function POST(req: Request) {
     const entry = body.entry?.[0];
     const changes = entry?.changes?.[0]?.value;
 
+    // ==========================================
+    // UPGRADE B: READ & DELIVERED RECEIPTS
+    // ==========================================
+    if (changes?.statuses) {
+      const statusObj = changes.statuses[0];
+      const recipientPhone = statusObj.recipient_id;
+      const deliveryStatus = statusObj.status; // 'sent', 'delivered', or 'read'
+
+      if (deliveryStatus === 'delivered' || deliveryStatus === 'read') {
+        // Find the customer associated with this phone number
+        const { data: customer } = await supabase
+          .from('customers')
+          .select('id')
+          .eq('phone_number', recipientPhone)
+          .single();
+
+        if (customer) {
+          // Update all their unread outbound messages to the new status
+          await supabase
+            .from('messages')
+            .update({ status: deliveryStatus })
+            .eq('customer_id', customer.id)
+            .eq('is_outbound', true)
+            .neq('status', 'read'); // Don't downgrade a read message back to delivered
+        }
+      }
+      return NextResponse.json({ status: 'receipt processed' }, { status: 200 });
+    }
+
+    // ==========================================
+    // INCOMING MESSAGES (TEXT & MEDIA)
+    // ==========================================
     if (changes?.messages) {
       const message = changes.messages[0];
       const contact = changes.contacts?.[0];
       
       const customerPhone = message.from; 
       const customerName = contact?.profile?.name || 'Unknown WhatsApp User';
-      const messageText = message.text?.body;
+      const msgType = message.type;
 
-      if (!messageText) return NextResponse.json({ status: 'not a text message' });
+      // ==========================================
+      // UPGRADE A: MEDIA HANDLING
+      // ==========================================
+      let messageText = '';
+      if (msgType === 'text') {
+        messageText = message.text?.body || '';
+      } else if (msgType === 'image') {
+        messageText = '📷 [Image Received]';
+      } else if (msgType === 'audio') {
+        messageText = '🎵 [Voice Note Received]';
+      } else if (msgType === 'video') {
+        messageText = '🎥 [Video Received]';
+      } else if (msgType === 'document') {
+        messageText = '📄 [Document Received]';
+      } else {
+        messageText = `📎 [${msgType.toUpperCase()} Received]`;
+      }
 
+      if (!messageText) return NextResponse.json({ status: 'empty message' });
+
+      // Core Routing: Find or Create Customer
+      let isNewCustomer = false;
       let { data: existingCustomer } = await supabase
         .from('customers')
         .select('*')
@@ -60,12 +107,13 @@ export async function POST(req: Request) {
         .single();
 
       if (!existingCustomer) {
+        isNewCustomer = true;
         const { data: newCustomer, error: createError } = await supabase
           .from('customers')
           .insert({
             phone_number: customerPhone,
             full_name: customerName,
-            status: 'ACTIVE',
+            status: 'NEW_ORDER', // Route fresh leads to New Order
             last_message: messageText
           })
           .select()
@@ -83,6 +131,7 @@ export async function POST(req: Request) {
           .eq('id', existingCustomer.id);
       }
 
+      // Save the inbound message bubble to Supabase
       await supabase.from('messages').insert({
         customer_id: existingCustomer.id,
         content: messageText,
@@ -90,6 +139,44 @@ export async function POST(req: Request) {
         is_internal: false,
         status: 'delivered'
       });
+
+      // ==========================================
+      // UPGRADE C: THE AUTO-RESPONDER
+      // ==========================================
+      if (isNewCustomer) {
+        const META_TOKEN = process.env.META_ACCESS_TOKEN;
+        const PHONE_ID = process.env.META_PHONE_ID;
+        const autoReply = `Hi ${customerName}! 👋 Welcome to ChatRax. We have received your message and an agent will be with you shortly.`;
+
+        if (META_TOKEN && PHONE_ID) {
+          // Fire the Meta API to send the text
+          const response = await fetch(`https://graph.facebook.com/v18.0/${PHONE_ID}/messages`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${META_TOKEN}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              messaging_product: 'whatsapp',
+              recipient_type: 'individual',
+              to: customerPhone,
+              type: 'text',
+              text: { preview_url: false, body: autoReply }
+            }),
+          });
+
+          // Save the automated reply to the ChatRax UI
+          if (response.ok) {
+            await supabase.from('messages').insert({
+              customer_id: existingCustomer.id,
+              content: autoReply,
+              is_outbound: true,
+              is_internal: false,
+              status: 'sent'
+            });
+          }
+        }
+      }
     }
 
     return NextResponse.json({ status: 'success' }, { status: 200 });
