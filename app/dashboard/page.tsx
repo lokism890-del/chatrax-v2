@@ -9,7 +9,7 @@ import {
   StickyNote, User, Download, ShoppingBag, Loader2,
   LayoutDashboard, LayoutTemplate, BarChart2, Settings, 
   TrendingUp, Search, Calendar, Plus, Star, Zap,
-  Copy, Check, Edit2, Megaphone, Users, Target, PieChart, TrendingDown,
+  Copy, Check, CheckCheck, Edit2, Megaphone, Users, Target, PieChart, TrendingDown,
   Key, Bell, Globe, Lock, Palette, LogOut
 } from 'lucide-react';
 import { jsPDF } from "jspdf";
@@ -150,22 +150,6 @@ export default function Dashboard() {
   const [campaignAudience, setCampaignAudience] = useState('ALL');
   const [campaignTemplateId, setCampaignTemplateId] = useState('');
 
-  const handleLaunchCampaign = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!campaignName.trim()) return;
-    try {
-      // Simple placeholder: create a broadcast record locally (expand as needed)
-      // For now, just clear the form and show a console message
-      console.log('Launching campaign', { campaignName, campaignAudience, campaignTemplateId });
-      setCampaignName('');
-      setCampaignAudience('ALL');
-      setCampaignTemplateId('');
-      alert('Broadcast launched');
-    } catch (err) {
-      console.error('Failed to launch campaign', err);
-    }
-  };
-
   // ─── THEME & LIVE TIME STATE ───
   const [currentTime, setCurrentTime] = useState("");
   const [theme, setTheme] = useState('nebula'); 
@@ -285,6 +269,12 @@ export default function Dashboard() {
     }
 
     const msgChannel = supabase.channel('realtime-messages')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages' }, (payload: any) => {
+         // This catches the read receipt blue tick updates dynamically!
+         if (payload.new.customer_id === selectedLead.id) {
+           setMessages(prev => prev.map(m => m.id === payload.new.id ? payload.new : m));
+         }
+      })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload: any) => {
         if (payload.new.customer_id === selectedLead.id) setMessages((prev) => [...prev, payload.new]);
         if (payload.new.is_outbound) {
@@ -341,11 +331,18 @@ export default function Dashboard() {
     setShowCommandMenu(false);
 
     try {
+      // 1. Save to Supabase instantly for snappy UI
       await supabase.from('messages').insert({
         customer_id: selectedLead.id, content, is_outbound: true, is_internal: internalStatus, status: 'sent'
       });
+      
+      // 2. Fire the actual Meta API Route we just built
       if (!internalStatus) {
-        await fetch('/api/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to: selectedLead.phone_number, message: content }) });
+        await fetch('/api/send', { 
+            method: 'POST', 
+            headers: { 'Content-Type': 'application/json' }, 
+            body: JSON.stringify({ to: selectedLead.phone_number, message: content }) 
+        });
       }
     } catch (err) { console.error(err); }
   };
@@ -486,6 +483,34 @@ export default function Dashboard() {
     doc.save(`Chatrax_Report_${name.replace(/\s+/g, '_')}.pdf`);
   };
 
+  const handleLaunchCampaign = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!campaignName || !campaignTemplateId) {
+      alert("Please fill in all campaign details.");
+      return;
+    }
+    if (!window.confirm(`Are you sure you want to blast this to your ${campaignAudience} audience?`)) return;
+
+    try {
+      const response = await fetch('/api/campaign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ campaignName, audience: campaignAudience, templateId: campaignTemplateId })
+      });
+      const data = await response.json();
+      if (data.success) {
+        alert(`🚀 Broadcast Complete! Sent to ${data.broadcasted} customers. Failed: ${data.failed}`);
+        setCampaignName('');
+        setCampaignTemplateId('');
+      } else {
+        alert(`Error: ${data.error}`);
+      }
+    } catch (err) {
+      console.error("Campaign launch failed", err);
+      alert("Failed to launch campaign. Check console.");
+    }
+  };
+
   const chatMessages = messages.filter(m => !m.is_internal);
   const internalMemos = messages.filter(m => m.is_internal);
 
@@ -498,7 +523,6 @@ export default function Dashboard() {
 
   const filteredReplies = quickReplies.filter(r => r.shortcut.toLowerCase().includes(commandQuery));
 
-  // Dynamic Percentage Calculations
   const totalLeads = leads.length || 1; 
   const newOrdersPct = leads.length ? Math.round((newOrdersCount / totalLeads) * 100) : 0;
   const activePct = leads.length ? Math.round((activeCount / totalLeads) * 100) : 0;
@@ -1375,8 +1399,19 @@ export default function Dashboard() {
                             >
                                <Trash2 className="w-3.5 h-3.5" />
                             </button>
-                            <div className={`p-4 rounded-2xl text-sm leading-relaxed shadow-xl backdrop-blur-md ${msg.is_outbound ? 'bg-gradient-to-br from-emerald-600 to-teal-600 text-white rounded-br-sm shadow-[0_8px_25px_rgba(16,185,129,0.3)] border border-emerald-400/30' : 'bg-[#1F2937] border border-white/10 text-zinc-100 rounded-bl-sm shadow-[0_8px_25px_rgba(0,0,0,0.3)]'}`}>{msg.content}</div>
-                            <span className="text-[10px] text-zinc-500 font-bold tracking-widest uppercase mt-2 px-1">{new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                            
+                            <div className={`p-4 rounded-2xl text-sm leading-relaxed shadow-xl backdrop-blur-md ${msg.is_outbound ? 'bg-gradient-to-br from-emerald-600 to-teal-600 text-white rounded-br-sm shadow-[0_8px_25px_rgba(16,185,129,0.3)] border border-emerald-400/30' : 'bg-[#1F2937] border border-white/10 text-zinc-100 rounded-bl-sm shadow-[0_8px_25px_rgba(0,0,0,0.3)]'}`}>
+                               {msg.content}
+                            </div>
+                            
+                            {/* UPDATED: ADDED BLUE TICKS HERE */}
+                            <span className={`text-[10px] font-bold tracking-widest uppercase mt-2 px-1 flex items-center gap-1 ${msg.is_outbound ? 'justify-end text-emerald-200/70' : 'justify-start text-zinc-500'}`}>
+                                {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                {msg.is_outbound && (
+                                   <CheckCheck className={`w-3.5 h-3.5 ${msg.status === 'read' ? 'text-blue-400' : 'text-emerald-200/50'}`} />
+                                )}
+                            </span>
+
                         </div>
                     ))}
                     <div ref={messagesEndRef} />
@@ -1502,4 +1537,4 @@ export default function Dashboard() {
       </div>
     </div>
   );
-}''
+}
