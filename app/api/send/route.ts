@@ -2,7 +2,9 @@ import { NextResponse } from 'next/server';
 
 export async function POST(req: Request) {
   try {
-    const { to, message } = await req.json();
+    const body = await req.json();
+    // Destructure new parameters for interactive messages, defaulting to 'text'
+    const { to, message, type = 'text', interactive } = body;
     
     const META_TOKEN = process.env.META_ACCESS_TOKEN;
     const PHONE_ID = process.env.META_PHONE_ID;
@@ -11,19 +13,27 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Missing Meta credentials' }, { status: 500 });
     }
 
+    // Build the dynamic payload
+    let payload: any = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: to,
+      type: type,
+    };
+
+    if (type === 'text') {
+      payload.text = { preview_url: false, body: message };
+    } else if (type === 'interactive') {
+      payload.interactive = interactive;
+    }
+
     const response = await fetch(`https://graph.facebook.com/v18.0/${PHONE_ID}/messages`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${META_TOKEN}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        messaging_product: 'whatsapp',
-        recipient_type: 'individual',
-        to: to,
-        type: 'text',
-        text: { preview_url: false, body: message }
-      }),
+      body: JSON.stringify(payload),
     });
 
     const data = await response.json();

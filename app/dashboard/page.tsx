@@ -10,7 +10,7 @@ import {
   LayoutDashboard, LayoutTemplate, BarChart2, Settings, 
   TrendingUp, Search, Calendar, Plus, Star, Zap,
   Copy, Check, CheckCheck, Edit2, Megaphone, Users, Target, PieChart, TrendingDown,
-  Key, Bell, Globe, Lock, Palette, LogOut
+  Key, Bell, Globe, Lock, Palette, LogOut, Eye, AlertTriangle, MousePointerClick, List
 } from 'lucide-react';
 import { jsPDF } from "jspdf";
 
@@ -154,9 +154,15 @@ export default function Dashboard() {
   const [currentTime, setCurrentTime] = useState("");
   const [theme, setTheme] = useState('nebula'); 
 
-  // ─── ELEMENT REFS ───
+  // ─── ENTERPRISE COLLABORATION STATE ───
+  const [presenceState, setPresenceState] = useState<Record<string, string[]>>({});
+  const presenceChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const [now, setNow] = useState(Date.now());
+  const alertedLeadsRef = useRef<Set<string>>(new Set());
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Core Authentication & Clock
   useEffect(() => {
     const checkAuth = async () => {
       const { data: { session } } = await supabase.auth.getSession();
@@ -182,6 +188,81 @@ export default function Dashboard() {
     }, 1000);
     return () => clearInterval(timer);
   }, [router]);
+
+  // SLA Enforcer & Pulse Clock (Every 5 seconds)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const currentNow = Date.now();
+      setNow(currentNow);
+
+      if (settings.audioAlerts) {
+        leads.forEach(lead => {
+          if (lead.status === 'NEW_ORDER') {
+            const timeDiff = currentNow - new Date(lead.created_at).getTime();
+            if (timeDiff > 900000 && !alertedLeadsRef.current.has(lead.id)) {
+              alertedLeadsRef.current.add(lead.id);
+              try {
+                const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(600, ctx.currentTime);
+                gain.gain.setValueAtTime(0.1, ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.8);
+                osc.start();
+                osc.stop(ctx.currentTime + 0.8);
+              } catch(e) { console.warn("Audio alert blocked by browser policy"); }
+            }
+          }
+        });
+      }
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [leads, settings.audioAlerts]);
+
+  // Live Agent Presence Tracking Setup
+  useEffect(() => {
+    if (!settings.adminName) return;
+
+    const channel = supabase.channel('chatrax_team_presence', {
+      config: { presence: { key: settings.adminName } }
+    });
+    presenceChannelRef.current = channel;
+
+    channel.on('presence', { event: 'sync' }, () => {
+      const state = channel.presenceState();
+      const newPresenceMap: Record<string, string[]> = {};
+      
+      Object.keys(state).forEach((key) => {
+        state[key].forEach((presence: any) => {
+          if (presence.leadId) {
+            if (!newPresenceMap[presence.leadId]) newPresenceMap[presence.leadId] = [];
+            if (!newPresenceMap[presence.leadId].includes(presence.agentName)) {
+              newPresenceMap[presence.leadId].push(presence.agentName);
+            }
+          }
+        });
+      });
+      setPresenceState(newPresenceMap);
+    });
+
+    channel.subscribe(async (status) => {
+      if (status === 'SUBSCRIBED') {
+        await channel.track({ agentName: settings.adminName, leadId: selectedLead?.id || null });
+      }
+    });
+
+    return () => { supabase.removeChannel(channel); };
+  }, [settings.adminName]);
+
+  // Update Presence broadcast whenever the selected lead changes
+  useEffect(() => {
+    if (presenceChannelRef.current?.state === 'joined') {
+      presenceChannelRef.current.track({ agentName: settings.adminName, leadId: selectedLead?.id || null });
+    }
+  }, [selectedLead, settings.adminName]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -270,7 +351,6 @@ export default function Dashboard() {
 
     const msgChannel = supabase.channel('realtime-messages')
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages' }, (payload: any) => {
-         // This catches the read receipt blue tick updates dynamically!
          if (payload.new.customer_id === selectedLead.id) {
            setMessages(prev => prev.map(m => m.id === payload.new.id ? payload.new : m));
          }
@@ -331,12 +411,16 @@ export default function Dashboard() {
     setShowCommandMenu(false);
 
     try {
-      // 1. Save to Supabase instantly for snappy UI
       await supabase.from('messages').insert({
         customer_id: selectedLead.id, content, is_outbound: true, is_internal: internalStatus, status: 'sent'
       });
+
+      if (selectedLead.status === 'NEW_ORDER') {
+        await supabase.from('customers').update({ status: 'ACTIVE' }).eq('id', selectedLead.id);
+        setLeads(prev => prev.map(l => l.id === selectedLead.id ? { ...l, status: 'ACTIVE' } : l));
+        setSelectedLead((prev: any) => prev ? { ...prev, status: 'ACTIVE' } : null);
+      }
       
-      // 2. Fire the actual Meta API Route we just built
       if (!internalStatus) {
         await fetch('/api/send', { 
             method: 'POST', 
@@ -345,6 +429,72 @@ export default function Dashboard() {
         });
       }
     } catch (err) { console.error(err); }
+  };
+
+  // ─── INTERACTIVE MESSAGING ENGINE ───
+  const handleSendInteractive = async (type: 'button' | 'list') => {
+    if (!selectedLead) return;
+    
+    let interactivePayload;
+    let displayMessage = "";
+
+    if (type === 'button') {
+      displayMessage = "🔘 [Sent Quick Reply Buttons: Support/Sales]";
+      interactivePayload = {
+        type: "button",
+        body: { text: "Hi! How can we assist you today?" },
+        action: {
+          buttons: [
+            { type: "reply", reply: { id: "btn_sales", title: "Sales" } },
+            { type: "reply", reply: { id: "btn_support", title: "Support" } }
+          ]
+        }
+      };
+    } else {
+      displayMessage = "📋 [Sent Interactive Menu List: Order Options]";
+      interactivePayload = {
+        type: "list",
+        header: { type: "text", text: "Main Menu" },
+        body: { text: "Please select an option from the menu below so we can route you correctly:" },
+        footer: { text: "ChatRax Pro Auto-Menu" },
+        action: {
+          button: "View Options",
+          sections: [
+            {
+              title: "Order Help",
+              rows: [
+                { id: "row_track", title: "Track Order", description: "Check your delivery status" },
+                { id: "row_return", title: "Returns", description: "Start a return process" }
+              ]
+            }
+          ]
+        }
+      };
+    }
+
+    try {
+      await supabase.from('messages').insert({
+        customer_id: selectedLead.id, content: displayMessage, is_outbound: true, is_internal: false, status: 'sent'
+      });
+
+      if (selectedLead.status === 'NEW_ORDER') {
+        await supabase.from('customers').update({ status: 'ACTIVE' }).eq('id', selectedLead.id);
+        setLeads(prev => prev.map(l => l.id === selectedLead.id ? { ...l, status: 'ACTIVE' } : l));
+        setSelectedLead((prev: any) => prev ? { ...prev, status: 'ACTIVE' } : null);
+      }
+
+      await fetch('/api/send', { 
+          method: 'POST', 
+          headers: { 'Content-Type': 'application/json' }, 
+          body: JSON.stringify({ 
+            to: selectedLead.phone_number, 
+            type: 'interactive', 
+            interactive: interactivePayload 
+          }) 
+      });
+    } catch (err) {
+      console.error(err);
+    }
   };
 
   const handleAddTemplate = async (e: React.FormEvent) => {
@@ -751,38 +901,61 @@ export default function Dashboard() {
                           </div>
 
                           <div className={`flex flex-col gap-3 min-h-[30vh] rounded-xl p-1.5 transition-all duration-300 custom-scrollbar ${draggedLead ? 'bg-white/5 border border-dashed border-white/20' : 'border border-transparent'}`}>
-                            {colLeads.map((lead) => (
-                              <div key={lead.id} draggable onDragStart={(e) => handleDragStart(e, lead.id)} onClick={() => setSelectedLead(lead)} 
-                                className={`group/card relative bg-[#374151]/60 backdrop-blur-md border border-white/10 rounded-xl p-4 cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_10px_30px_rgba(0,0,0,0.4)] hover:bg-[#4B5563]/60 hover:border-white/20 overflow-hidden`}>
-                                <div className={`absolute left-0 top-0 bottom-0 w-1 transition-all duration-300 group-hover/card:w-1.5`} style={{ backgroundColor: config.hex, boxShadow: `0 0 15px ${config.hex}` }} />
-                                
-                                <div className="absolute top-3 right-3 flex items-center gap-1.5 opacity-0 group-hover/card:opacity-100 transition-opacity duration-300 z-20">
-                                   <button onClick={(e) => toggleStar(e, lead.id)} className="p-1.5 bg-[#111827]/60 hover:bg-[#1F2937] rounded-md transition-colors text-zinc-400 hover:text-amber-400 border border-white/5 hover:border-amber-500/30" title="Star Lead">
-                                     <Star className={`w-3.5 h-3.5 ${starredLeads.has(lead.id) ? 'fill-amber-400 text-amber-400' : ''}`} />
-                                   </button>
-                                   <button onClick={(e) => handleDeleteLead(e, lead.id)} className="p-1.5 bg-[#111827]/60 hover:bg-red-500/20 rounded-md transition-colors text-zinc-400 hover:text-red-400 border border-white/5 hover:border-red-500/30" title="Delete Conversation">
-                                     <Trash2 className="w-3.5 h-3.5" />
-                                   </button>
+                            {colLeads.map((lead) => {
+                              // Collaboration Logic
+                              const isSlaBreached = status === 'NEW_ORDER' && (now - new Date(lead.created_at).getTime() > 900000);
+                              const viewers = presenceState[lead.id]?.filter(name => name !== settings.adminName) || [];
+                              const slaClasses = isSlaBreached ? 'ring-1 ring-red-500/80 shadow-[0_0_15px_rgba(239,68,68,0.3)] animate-[pulse_2s_ease-in-out_infinite]' : 'border-white/10';
+
+                              return (
+                                <div key={lead.id} draggable onDragStart={(e) => handleDragStart(e, lead.id)} onClick={() => setSelectedLead(lead)} 
+                                  className={`group/card relative bg-[#374151]/60 backdrop-blur-md rounded-xl p-4 cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_10px_30px_rgba(0,0,0,0.4)] hover:bg-[#4B5563]/60 overflow-hidden ${slaClasses}`}>
+                                  <div className={`absolute left-0 top-0 bottom-0 w-1 transition-all duration-300 group-hover/card:w-1.5`} style={{ backgroundColor: config.hex, boxShadow: `0 0 15px ${config.hex}` }} />
+                                  
+                                  {/* Presence Indicator */}
+                                  {viewers.length > 0 && (
+                                    <div className="absolute top-0 right-0 bg-sky-500/20 backdrop-blur-md border-b border-l border-sky-500/30 px-2 py-1 rounded-bl-xl z-30 flex items-center gap-1 shadow-sm">
+                                      <Eye className="w-3 h-3 text-sky-400 animate-pulse" />
+                                      <span className="text-[9px] font-bold text-sky-400 tracking-wider uppercase">{viewers[0]}</span>
+                                    </div>
+                                  )}
+
+                                  <div className="absolute top-3 right-3 flex items-center gap-1.5 opacity-0 group-hover/card:opacity-100 transition-opacity duration-300 z-20">
+                                     <button onClick={(e) => toggleStar(e, lead.id)} className="p-1.5 bg-[#111827]/60 hover:bg-[#1F2937] rounded-md transition-colors text-zinc-400 hover:text-amber-400 border border-white/5 hover:border-amber-500/30" title="Star Lead">
+                                       <Star className={`w-3.5 h-3.5 ${starredLeads.has(lead.id) ? 'fill-amber-400 text-amber-400' : ''}`} />
+                                     </button>
+                                     <button onClick={(e) => handleDeleteLead(e, lead.id)} className="p-1.5 bg-[#111827]/60 hover:bg-red-500/20 rounded-md transition-colors text-zinc-400 hover:text-red-400 border border-white/5 hover:border-red-500/30" title="Delete Conversation">
+                                       <Trash2 className="w-3.5 h-3.5" />
+                                     </button>
+                                  </div>
+                                  
+                                  <div className="flex flex-col items-start mb-3 pl-1 pr-12 relative z-10">
+                                    <span className="font-sans text-sm tracking-wide text-white font-semibold drop-shadow-sm line-clamp-1">
+                                      {lead.full_name || 'Store Customer'}
+                                    </span>
+                                    <span className="text-[10px] text-emerald-400 font-bold tracking-widest mt-0.5 drop-shadow-md">
+                                      +{lead.phone_number}
+                                    </span>
+                                  </div>
+                                  
+                                  <div className="bg-[#111827]/40 rounded-lg p-3 ml-1 border border-white/5 group-hover/card:border-white/10 transition-colors duration-300 shadow-inner">
+                                    <p className="text-[11px] text-zinc-300 line-clamp-2 leading-relaxed">{lead.last_message || "No message content."}</p>
+                                  </div>
+                                  
+                                  <div className="mt-3 flex items-center justify-between text-[9px] uppercase tracking-widest text-zinc-400 font-semibold pl-1">
+                                    <div className="flex items-center gap-1.5">
+                                       {isSlaBreached ? (
+                                          <span className="text-red-400 flex items-center gap-1 font-bold bg-red-500/10 px-1.5 py-0.5 rounded border border-red-500/20">
+                                             <AlertTriangle className="w-3 h-3" /> SLA BREACH
+                                          </span>
+                                       ) : (
+                                          <><Clock className="w-3 h-3 text-zinc-500" />{new Date(lead.created_at).toLocaleDateString()}</>
+                                       )}
+                                    </div>
+                                  </div>
                                 </div>
-                                
-                                <div className="flex flex-col items-start mb-3 pl-1 pr-12 relative z-10">
-                                  <span className="font-sans text-sm tracking-wide text-white font-semibold drop-shadow-sm line-clamp-1">
-                                    {lead.full_name || 'Store Customer'}
-                                  </span>
-                                  <span className="text-[10px] text-emerald-400 font-bold tracking-widest mt-0.5 drop-shadow-md">
-                                    +{lead.phone_number}
-                                  </span>
-                                </div>
-                                
-                                <div className="bg-[#111827]/40 rounded-lg p-3 ml-1 border border-white/5 group-hover/card:border-white/10 transition-colors duration-300 shadow-inner">
-                                  <p className="text-[11px] text-zinc-300 line-clamp-2 leading-relaxed">{lead.last_message || "No message content."}</p>
-                                </div>
-                                
-                                <div className="mt-3 flex items-center justify-between text-[9px] uppercase tracking-widest text-zinc-400 font-semibold pl-1">
-                                  <div className="flex items-center gap-1.5"><Clock className="w-3 h-3 text-zinc-500" />{new Date(lead.created_at).toLocaleDateString()}</div>
-                                </div>
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         </div>
                       );
@@ -829,38 +1002,61 @@ export default function Dashboard() {
                           </div>
 
                           <div className={`flex flex-col gap-3 h-full min-h-[50vh] rounded-xl p-1.5 transition-all duration-300 custom-scrollbar ${draggedLead ? 'bg-white/5 border border-dashed border-white/20' : 'border border-transparent'}`}>
-                            {colLeads.map((lead) => (
-                              <div key={lead.id} draggable onDragStart={(e) => handleDragStart(e, lead.id)} onClick={() => setSelectedLead(lead)} 
-                                className={`group/card relative bg-[#374151]/60 backdrop-blur-md border border-white/10 rounded-xl p-4 cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_10px_30px_rgba(0,0,0,0.4)] hover:bg-[#4B5563]/60 hover:border-white/20 overflow-hidden`}>
-                                <div className={`absolute left-0 top-0 bottom-0 w-1 transition-all duration-300 group-hover/card:w-1.5`} style={{ backgroundColor: config.hex, boxShadow: `0 0 15px ${config.hex}` }} />
-                                
-                                <div className="absolute top-3 right-3 flex items-center gap-1.5 opacity-0 group-hover/card:opacity-100 transition-opacity duration-300 z-20">
-                                   <button onClick={(e) => toggleStar(e, lead.id)} className="p-1.5 bg-[#111827]/60 hover:bg-[#1F2937] rounded-md transition-colors text-zinc-400 hover:text-amber-400 border border-white/5 hover:border-amber-500/30" title="Star Lead">
-                                     <Star className={`w-3.5 h-3.5 ${starredLeads.has(lead.id) ? 'fill-amber-400 text-amber-400' : ''}`} />
-                                   </button>
-                                   <button onClick={(e) => handleDeleteLead(e, lead.id)} className="p-1.5 bg-[#111827]/60 hover:bg-red-500/20 rounded-md transition-colors text-zinc-400 hover:text-red-400 border border-white/5 hover:border-red-500/30" title="Delete Conversation">
-                                     <Trash2 className="w-3.5 h-3.5" />
-                                   </button>
+                            {colLeads.map((lead) => {
+                              // Collaboration Logic
+                              const isSlaBreached = status === 'NEW_ORDER' && (now - new Date(lead.created_at).getTime() > 900000);
+                              const viewers = presenceState[lead.id]?.filter(name => name !== settings.adminName) || [];
+                              const slaClasses = isSlaBreached ? 'ring-1 ring-red-500/80 shadow-[0_0_15px_rgba(239,68,68,0.3)] animate-[pulse_2s_ease-in-out_infinite]' : 'border-white/10';
+
+                              return (
+                                <div key={lead.id} draggable onDragStart={(e) => handleDragStart(e, lead.id)} onClick={() => setSelectedLead(lead)} 
+                                  className={`group/card relative bg-[#374151]/60 backdrop-blur-md rounded-xl p-4 cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_10px_30px_rgba(0,0,0,0.4)] hover:bg-[#4B5563]/60 overflow-hidden ${slaClasses}`}>
+                                  <div className={`absolute left-0 top-0 bottom-0 w-1 transition-all duration-300 group-hover/card:w-1.5`} style={{ backgroundColor: config.hex, boxShadow: `0 0 15px ${config.hex}` }} />
+                                  
+                                  {/* Presence Indicator */}
+                                  {viewers.length > 0 && (
+                                    <div className="absolute top-0 right-0 bg-sky-500/20 backdrop-blur-md border-b border-l border-sky-500/30 px-2 py-1 rounded-bl-xl z-30 flex items-center gap-1 shadow-sm">
+                                      <Eye className="w-3 h-3 text-sky-400 animate-pulse" />
+                                      <span className="text-[9px] font-bold text-sky-400 tracking-wider uppercase">{viewers[0]}</span>
+                                    </div>
+                                  )}
+
+                                  <div className="absolute top-3 right-3 flex items-center gap-1.5 opacity-0 group-hover/card:opacity-100 transition-opacity duration-300 z-20">
+                                     <button onClick={(e) => toggleStar(e, lead.id)} className="p-1.5 bg-[#111827]/60 hover:bg-[#1F2937] rounded-md transition-colors text-zinc-400 hover:text-amber-400 border border-white/5 hover:border-amber-500/30" title="Star Lead">
+                                       <Star className={`w-3.5 h-3.5 ${starredLeads.has(lead.id) ? 'fill-amber-400 text-amber-400' : ''}`} />
+                                     </button>
+                                     <button onClick={(e) => handleDeleteLead(e, lead.id)} className="p-1.5 bg-[#111827]/60 hover:bg-red-500/20 rounded-md transition-colors text-zinc-400 hover:text-red-400 border border-white/5 hover:border-red-500/30" title="Delete Conversation">
+                                       <Trash2 className="w-3.5 h-3.5" />
+                                     </button>
+                                  </div>
+                                  
+                                  <div className="flex flex-col items-start mb-3 pl-1 pr-12 relative z-10">
+                                    <span className="font-sans text-sm tracking-wide text-white font-semibold drop-shadow-sm line-clamp-1">
+                                      {lead.full_name || 'Store Customer'}
+                                    </span>
+                                    <span className="text-[10px] text-emerald-400 font-bold tracking-widest mt-0.5 drop-shadow-md">
+                                      +{lead.phone_number}
+                                    </span>
+                                  </div>
+                                  
+                                  <div className="bg-[#111827]/40 rounded-lg p-3 ml-1 border border-white/5 group-hover/card:border-white/10 transition-colors duration-300 shadow-inner">
+                                    <p className="text-[11px] text-zinc-300 line-clamp-2 leading-relaxed">{lead.last_message || "No message content."}</p>
+                                  </div>
+                                  
+                                  <div className="mt-3 flex items-center justify-between text-[9px] uppercase tracking-widest text-zinc-400 font-semibold pl-1">
+                                    <div className="flex items-center gap-1.5">
+                                       {isSlaBreached ? (
+                                          <span className="text-red-400 flex items-center gap-1 font-bold bg-red-500/10 px-1.5 py-0.5 rounded border border-red-500/20">
+                                             <AlertTriangle className="w-3 h-3" /> SLA BREACH
+                                          </span>
+                                       ) : (
+                                          <><Clock className="w-3 h-3 text-zinc-500" />{new Date(lead.created_at).toLocaleDateString()}</>
+                                       )}
+                                    </div>
+                                  </div>
                                 </div>
-                                
-                                <div className="flex flex-col items-start mb-3 pl-1 pr-12 relative z-10">
-                                  <span className="font-sans text-sm tracking-wide text-white font-semibold drop-shadow-sm line-clamp-1">
-                                    {lead.full_name || 'Store Customer'}
-                                  </span>
-                                  <span className="text-[10px] text-emerald-400 font-bold tracking-widest mt-0.5 drop-shadow-md">
-                                    +{lead.phone_number}
-                                  </span>
-                                </div>
-                                
-                                <div className="bg-[#111827]/40 rounded-lg p-3 ml-1 border border-white/5 group-hover/card:border-white/10 transition-colors duration-300 shadow-inner">
-                                  <p className="text-[11px] text-zinc-300 line-clamp-2 leading-relaxed">{lead.last_message || "No message content."}</p>
-                                </div>
-                                
-                                <div className="mt-3 flex items-center justify-between text-[9px] uppercase tracking-widest text-zinc-400 font-semibold pl-1">
-                                  <div className="flex items-center gap-1.5"><Clock className="w-3 h-3 text-zinc-500" />{new Date(lead.created_at).toLocaleDateString()}</div>
-                                </div>
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         </div>
                       );
@@ -1404,7 +1600,6 @@ export default function Dashboard() {
                                {msg.content}
                             </div>
                             
-                            {/* UPDATED: ADDED BLUE TICKS HERE */}
                             <span className={`text-[10px] font-bold tracking-widest uppercase mt-2 px-1 flex items-center gap-1 ${msg.is_outbound ? 'justify-end text-emerald-200/70' : 'justify-start text-zinc-500'}`}>
                                 {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                 {msg.is_outbound && (
@@ -1444,9 +1639,19 @@ export default function Dashboard() {
                       </div>
                     )}
 
+                    {/* ─── QUICK ACTION BUTTONS ─── */}
                     <div className="flex gap-2 mb-3">
                         <button type="button" onClick={() => setIsInternal(!isInternal)} className={`text-[10px] font-bold px-4 py-1.5 rounded-full border transition-all duration-300 hover:scale-105 active:scale-95 ${isInternal ? 'bg-amber-500 text-black border-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.5)]' : 'text-zinc-400 border-white/20 hover:text-amber-400 hover:border-amber-400/50 hover:bg-amber-500/10'}`}>Internal Note</button>
+                        
+                        <button type="button" onClick={() => handleSendInteractive('button')} className="text-[10px] font-bold px-4 py-1.5 rounded-full border border-sky-500/50 text-sky-400 hover:bg-sky-500/10 transition-all flex items-center gap-1 hover:shadow-[0_0_10px_rgba(14,165,233,0.3)] hover:scale-105 active:scale-95">
+                          <MousePointerClick className="w-3 h-3"/> Buttons
+                        </button>
+                        
+                        <button type="button" onClick={() => handleSendInteractive('list')} className="text-[10px] font-bold px-4 py-1.5 rounded-full border border-purple-500/50 text-purple-400 hover:bg-purple-500/10 transition-all flex items-center gap-1 hover:shadow-[0_0_10px_rgba(168,85,247,0.3)] hover:scale-105 active:scale-95">
+                          <List className="w-3 h-3"/> Menu List
+                        </button>
                     </div>
+
                     <form onSubmit={handleSendMessage} className="relative flex items-center group/form">
                         <input 
                            type="text" 
