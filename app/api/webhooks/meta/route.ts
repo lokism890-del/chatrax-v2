@@ -68,7 +68,7 @@ export async function POST(req: Request) {
     }
 
     // ==========================================
-    // INCOMING MESSAGES (TEXT & MEDIA)
+    // INCOMING MESSAGES (TEXT, INTERACTIVE, & MEDIA)
     // ==========================================
     if (changes?.messages) {
       const message = changes.messages[0];
@@ -78,20 +78,32 @@ export async function POST(req: Request) {
       const customerName = contact?.profile?.name || 'Unknown WhatsApp User';
       const msgType = message.type;
 
-      // ==========================================
-      // UPGRADE A: MEDIA HANDLING
-      // ==========================================
       let messageText = '';
+
+      // 1. Text Parsing
       if (msgType === 'text') {
         messageText = message.text?.body || '';
-      } else if (msgType === 'image') {
-        messageText = '📷 [Image Received]';
+      } 
+      // 2. Interactive Button/List Parsing
+      else if (msgType === 'interactive') {
+        const interactiveType = message.interactive?.type;
+        if (interactiveType === 'button_reply') {
+          messageText = `👆 Selected: ${message.interactive.button_reply.title}`;
+        } else if (interactiveType === 'list_reply') {
+          messageText = `📋 Selected: ${message.interactive.list_reply.title}`;
+        } else {
+          messageText = `📎 [Interactive Received]`;
+        }
+      } 
+      // 3. Media ID Parsing (Tagged for the frontend proxy)
+      else if (msgType === 'image') {
+        messageText = `MEDIA::image::${message.image.id}`;
       } else if (msgType === 'audio') {
-        messageText = '🎵 [Voice Note Received]';
+        messageText = `MEDIA::audio::${message.audio.id}`;
       } else if (msgType === 'video') {
-        messageText = '🎥 [Video Received]';
+        messageText = `MEDIA::video::${message.video.id}`;
       } else if (msgType === 'document') {
-        messageText = '📄 [Document Received]';
+        messageText = `📄 [Document Received]`;
       } else {
         messageText = `📎 [${msgType.toUpperCase()} Received]`;
       }
@@ -114,7 +126,7 @@ export async function POST(req: Request) {
             phone_number: customerPhone,
             full_name: customerName,
             status: 'NEW_ORDER', // Route fresh leads to New Order
-            last_message: messageText
+            last_message: messageText.includes("MEDIA::") ? "[Media Attachment]" : messageText
           })
           .select()
           .single();
@@ -125,7 +137,7 @@ export async function POST(req: Request) {
         await supabase
           .from('customers')
           .update({ 
-            last_message: messageText,
+            last_message: messageText.includes("MEDIA::") ? "[Media Attachment]" : messageText,
             status: existingCustomer.status === 'RESOLVED' ? 'ACTIVE' : existingCustomer.status 
           })
           .eq('id', existingCustomer.id);
@@ -146,7 +158,7 @@ export async function POST(req: Request) {
       if (isNewCustomer) {
         const META_TOKEN = process.env.META_ACCESS_TOKEN;
         const PHONE_ID = process.env.META_PHONE_ID;
-        const autoReply = `Hi ${customerName}! 👋 Welcome to ChatRax. We have received your message and an agent will be with you shortly.`;
+        const autoReply = `Hi ${customerName}! 👋 Welcome to Support. We have received your message and an agent will be with you shortly.`;
 
         if (META_TOKEN && PHONE_ID) {
           // Fire the Meta API to send the text

@@ -189,7 +189,7 @@ export default function Dashboard() {
     return () => clearInterval(timer);
   }, [router]);
 
-  // SLA Enforcer & Pulse Clock (Every 5 seconds)
+  // SLA Enforcer & Pulse Clock
   useEffect(() => {
     const interval = setInterval(() => {
       const currentNow = Date.now();
@@ -222,19 +222,15 @@ export default function Dashboard() {
     return () => clearInterval(interval);
   }, [leads, settings.audioAlerts]);
 
-  // Live Agent Presence Tracking Setup
+  // Live Agent Presence
   useEffect(() => {
     if (!settings.adminName) return;
-
-    const channel = supabase.channel('chatrax_team_presence', {
-      config: { presence: { key: settings.adminName } }
-    });
+    const channel = supabase.channel('chatrax_team_presence', { config: { presence: { key: settings.adminName } } });
     presenceChannelRef.current = channel;
 
     channel.on('presence', { event: 'sync' }, () => {
       const state = channel.presenceState();
       const newPresenceMap: Record<string, string[]> = {};
-      
       Object.keys(state).forEach((key) => {
         state[key].forEach((presence: any) => {
           if (presence.leadId) {
@@ -249,15 +245,12 @@ export default function Dashboard() {
     });
 
     channel.subscribe(async (status) => {
-      if (status === 'SUBSCRIBED') {
-        await channel.track({ agentName: settings.adminName, leadId: selectedLead?.id || null });
-      }
+      if (status === 'SUBSCRIBED') await channel.track({ agentName: settings.adminName, leadId: selectedLead?.id || null });
     });
 
     return () => { supabase.removeChannel(channel); };
   }, [settings.adminName]);
 
-  // Update Presence broadcast whenever the selected lead changes
   useEffect(() => {
     if (presenceChannelRef.current?.state === 'joined') {
       presenceChannelRef.current.track({ agentName: settings.adminName, leadId: selectedLead?.id || null });
@@ -297,7 +290,6 @@ export default function Dashboard() {
   const fetchStats = async () => {
     const { count: outCount } = await supabase.from('messages').select('*', { count: 'exact', head: true }).eq('is_outbound', true);
     setTotalSent(outCount || 0);
-    
     const { count: inCount } = await supabase.from('messages').select('*', { count: 'exact', head: true }).eq('is_outbound', false).eq('is_internal', false);
     setTotalReceived(inCount || 0);
   };
@@ -312,12 +304,7 @@ export default function Dashboard() {
       setShopifyData(null);
       return;
     }
-    
-    setEditProfile({
-        full_name: selectedLead.full_name || '',
-        email: selectedLead.email || '',
-        profile_notes: selectedLead.profile_notes || ''
-    });
+    setEditProfile({ full_name: selectedLead.full_name || '', email: selectedLead.email || '', profile_notes: selectedLead.profile_notes || '' });
 
     const fetchChatHistory = async () => {
       const { data } = await supabase.from('messages').select('*').eq('customer_id', selectedLead.id).order('created_at', { ascending: true });
@@ -329,25 +316,16 @@ export default function Dashboard() {
       setLoadingShopify(true);
       try {
         const response = await fetch(`/api/shopify/customer?phone=${encodeURIComponent(selectedLead.phone_number)}`);
-        
         const contentType = response.headers.get("content-type");
         if (!response.ok || !contentType || !contentType.includes("application/json")) {
-          setShopifyData(null);
-          setLoadingShopify(false);
-          return; 
+          setShopifyData(null); setLoadingShopify(false); return; 
         }
-
         const data = await response.json();
         setShopifyData(data);
-      } catch (err) {
-        setShopifyData(null);
-      }
+      } catch (err) { setShopifyData(null); }
       setLoadingShopify(false);
     };
-
-    if (selectedLead.phone_number) {
-      fetchShopifyData();
-    }
+    if (selectedLead.phone_number) fetchShopifyData();
 
     const msgChannel = supabase.channel('realtime-messages')
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages' }, (payload: any) => {
@@ -357,11 +335,8 @@ export default function Dashboard() {
       })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload: any) => {
         if (payload.new.customer_id === selectedLead.id) setMessages((prev) => [...prev, payload.new]);
-        if (payload.new.is_outbound) {
-            setTotalSent(prev => prev + 1);
-        } else if (!payload.new.is_internal) {
-            setTotalReceived(prev => prev + 1);
-        }
+        if (payload.new.is_outbound) setTotalSent(prev => prev + 1);
+        else if (!payload.new.is_internal) setTotalReceived(prev => prev + 1);
       }).subscribe();
     return () => { supabase.removeChannel(msgChannel); };
   }, [selectedLead?.id]);
@@ -372,22 +347,16 @@ export default function Dashboard() {
   };
 
   const handleUpdateProfile = async () => {
-    await supabase.from('customers').update({
-      full_name: editProfile.full_name,
-      email: editProfile.email,
-      profile_notes: editProfile.profile_notes
-    }).eq('id', selectedLead.id);
+    await supabase.from('customers').update({ full_name: editProfile.full_name, email: editProfile.email, profile_notes: editProfile.profile_notes }).eq('id', selectedLead.id);
     fetchLeads();
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
     setNewMessage(val);
-
     const lastWord = val.split(' ').pop() || '';
     if (lastWord.startsWith('/')) {
-      setShowCommandMenu(true);
-      setCommandQuery(lastWord.substring(1).toLowerCase());
+      setShowCommandMenu(true); setCommandQuery(lastWord.substring(1).toLowerCase());
     } else {
       setShowCommandMenu(false);
     }
@@ -406,14 +375,10 @@ export default function Dashboard() {
     
     const content = newMessage;
     const internalStatus = isInternal;
-    setNewMessage(''); 
-    setIsInternal(false);
-    setShowCommandMenu(false);
+    setNewMessage(''); setIsInternal(false); setShowCommandMenu(false);
 
     try {
-      await supabase.from('messages').insert({
-        customer_id: selectedLead.id, content, is_outbound: true, is_internal: internalStatus, status: 'sent'
-      });
+      await supabase.from('messages').insert({ customer_id: selectedLead.id, content, is_outbound: true, is_internal: internalStatus, status: 'sent' });
 
       if (selectedLead.status === 'NEW_ORDER') {
         await supabase.from('customers').update({ status: 'ACTIVE' }).eq('id', selectedLead.id);
@@ -422,11 +387,7 @@ export default function Dashboard() {
       }
       
       if (!internalStatus) {
-        await fetch('/api/send', { 
-            method: 'POST', 
-            headers: { 'Content-Type': 'application/json' }, 
-            body: JSON.stringify({ to: selectedLead.phone_number, message: content }) 
-        });
+        await fetch('/api/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to: selectedLead.phone_number, message: content }) });
       }
     } catch (err) { console.error(err); }
   };
@@ -473,9 +434,7 @@ export default function Dashboard() {
     }
 
     try {
-      await supabase.from('messages').insert({
-        customer_id: selectedLead.id, content: displayMessage, is_outbound: true, is_internal: false, status: 'sent'
-      });
+      await supabase.from('messages').insert({ customer_id: selectedLead.id, content: displayMessage, is_outbound: true, is_internal: false, status: 'sent' });
 
       if (selectedLead.status === 'NEW_ORDER') {
         await supabase.from('customers').update({ status: 'ACTIVE' }).eq('id', selectedLead.id);
@@ -486,113 +445,100 @@ export default function Dashboard() {
       await fetch('/api/send', { 
           method: 'POST', 
           headers: { 'Content-Type': 'application/json' }, 
-          body: JSON.stringify({ 
-            to: selectedLead.phone_number, 
-            type: 'interactive', 
-            interactive: interactivePayload 
-          }) 
+          body: JSON.stringify({ to: selectedLead.phone_number, type: 'interactive', interactive: interactivePayload }) 
       });
-    } catch (err) {
-      console.error(err);
+    } catch (err) { console.error(err); }
+  };
+
+  // ─── DYNAMIC MEDIA RENDERER ───
+  const renderMessageContent = (content: string) => {
+    if (content.startsWith('MEDIA::')) {
+      const parts = content.split('::');
+      const type = parts[1];
+      const mediaId = parts[2];
+
+      if (type === 'image') {
+        return (
+          <div className="mt-1">
+            <img src={`/api/media?id=${mediaId}`} alt="Customer Upload" className="max-w-[200px] md:max-w-xs rounded-xl shadow-md border border-white/20" />
+          </div>
+        );
+      }
+      if (type === 'audio') {
+        return (
+          <div className="mt-1">
+            <audio controls className="max-w-[200px] md:max-w-xs h-10 rounded-full shadow-md">
+              <source src={`/api/media?id=${mediaId}`} type="audio/ogg" />
+              Your browser does not support the audio element.
+            </audio>
+          </div>
+        );
+      }
+      if (type === 'video') {
+        return (
+          <div className="mt-1">
+            <video controls className="max-w-[200px] md:max-w-xs rounded-xl shadow-md border border-white/20">
+              <source src={`/api/media?id=${mediaId}`} />
+            </video>
+          </div>
+        );
+      }
     }
+    return content;
   };
 
   const handleAddTemplate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newShortcut.trim() || !newTemplateContent.trim()) return;
-    
     try {
       const cleanShortcut = newShortcut.replace('/', '').trim().toLowerCase();
-      const { data, error } = await supabase
-        .from('quick_replies')
-        .insert([{ shortcut: cleanShortcut, content: newTemplateContent.trim() }])
-        .select();
-
-      if (!error && data) {
-        setQuickReplies([data[0], ...quickReplies]);
-        setNewShortcut('');
-        setNewTemplateContent('');
-      }
+      const { data, error } = await supabase.from('quick_replies').insert([{ shortcut: cleanShortcut, content: newTemplateContent.trim() }]).select();
+      if (!error && data) { setQuickReplies([data[0], ...quickReplies]); setNewShortcut(''); setNewTemplateContent(''); }
     } catch (err) { console.error("Error adding template:", err); }
   };
 
   const handleDeleteTemplate = async (id: string) => {
     if (!window.confirm("Delete this template permanently?")) return;
-    try {
-      await supabase.from('quick_replies').delete().eq('id', id);
-      setQuickReplies(quickReplies.filter(q => q.id !== id));
-    } catch (err) { console.error("Error deleting template:", err); }
+    try { await supabase.from('quick_replies').delete().eq('id', id); setQuickReplies(quickReplies.filter(q => q.id !== id)); } catch (err) { console.error(err); }
   };
 
   const handleCopyTemplate = (id: string, content: string) => {
-    navigator.clipboard.writeText(content);
-    setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 2000);
+    navigator.clipboard.writeText(content); setCopiedId(id); setTimeout(() => setCopiedId(null), 2000);
   };
 
   const startEditingTemplate = (template: {id: string, shortcut: string, content: string}) => {
-    setEditingTemplateId(template.id);
-    setEditShortcut(template.shortcut);
-    setEditTemplateContent(template.content);
+    setEditingTemplateId(template.id); setEditShortcut(template.shortcut); setEditTemplateContent(template.content);
   };
 
-  const cancelEditingTemplate = () => {
-    setEditingTemplateId(null);
-    setEditShortcut('');
-    setEditTemplateContent('');
-  };
+  const cancelEditingTemplate = () => { setEditingTemplateId(null); setEditShortcut(''); setEditTemplateContent(''); };
 
   const handleUpdateTemplate = async (id: string) => {
     if (!editShortcut.trim() || !editTemplateContent.trim()) return;
     try {
       const cleanShortcut = editShortcut.replace('/', '').trim().toLowerCase();
-      const { error } = await supabase
-        .from('quick_replies')
-        .update({ shortcut: cleanShortcut, content: editTemplateContent.trim() })
-        .eq('id', id);
-
-      if (!error) {
-        setQuickReplies(prev => prev.map(q => q.id === id ? { ...q, shortcut: cleanShortcut, content: editTemplateContent.trim() } : q));
-        setEditingTemplateId(null);
-      }
-    } catch (err) { console.error("Error updating template:", err); }
+      const { error } = await supabase.from('quick_replies').update({ shortcut: cleanShortcut, content: editTemplateContent.trim() }).eq('id', id);
+      if (!error) { setQuickReplies(prev => prev.map(q => q.id === id ? { ...q, shortcut: cleanShortcut, content: editTemplateContent.trim() } : q)); setEditingTemplateId(null); }
+    } catch (err) { console.error(err); }
   };
 
   const handleDeleteMemo = async (memoId: string) => {
-    try { 
-      await supabase.from('messages').delete().eq('id', memoId); 
-      setMessages(prev => prev.filter(m => m.id !== memoId)); 
-    } 
-    catch (err) { console.error("Error deleting memo:", err); }
+    try { await supabase.from('messages').delete().eq('id', memoId); setMessages(prev => prev.filter(m => m.id !== memoId)); } catch (err) { console.error(err); }
   };
 
   const handleDeleteMessage = async (msgId: string) => {
     if (!window.confirm("Delete this message from the system?")) return;
-    try { 
-      await supabase.from('messages').delete().eq('id', msgId); 
-      setMessages(prev => prev.filter(m => m.id !== msgId)); 
-    } 
-    catch (err) { console.error("Error deleting message:", err); }
+    try { await supabase.from('messages').delete().eq('id', msgId); setMessages(prev => prev.filter(m => m.id !== msgId)); } catch (err) { console.error(err); }
   };
 
   const handleDeleteLead = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
     if (!window.confirm('Are you sure you want to completely delete this lead and their conversation?')) return;
-    try {
-      await supabase.from('customers').delete().eq('id', id);
-      setLeads(prev => prev.filter(l => l.id !== id));
-      if (selectedLead?.id === id) setSelectedLead(null);
-    } catch (err) { console.error("Error deleting lead:", err); }
+    try { await supabase.from('customers').delete().eq('id', id); setLeads(prev => prev.filter(l => l.id !== id)); if (selectedLead?.id === id) setSelectedLead(null); } catch (err) { console.error(err); }
   };
 
   const toggleStar = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    setStarredLeads(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+    setStarredLeads(prev => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
   };
 
   const handleDragStart = (e: React.DragEvent, id: string) => { setDraggedLead(id); };
@@ -635,30 +581,15 @@ export default function Dashboard() {
 
   const handleLaunchCampaign = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!campaignName || !campaignTemplateId) {
-      alert("Please fill in all campaign details.");
-      return;
-    }
+    if (!campaignName || !campaignTemplateId) { alert("Please fill in all campaign details."); return; }
     if (!window.confirm(`Are you sure you want to blast this to your ${campaignAudience} audience?`)) return;
 
     try {
-      const response = await fetch('/api/campaign', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ campaignName, audience: campaignAudience, templateId: campaignTemplateId })
-      });
+      const response = await fetch('/api/campaign', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ campaignName, audience: campaignAudience, templateId: campaignTemplateId }) });
       const data = await response.json();
-      if (data.success) {
-        alert(`🚀 Broadcast Complete! Sent to ${data.broadcasted} customers. Failed: ${data.failed}`);
-        setCampaignName('');
-        setCampaignTemplateId('');
-      } else {
-        alert(`Error: ${data.error}`);
-      }
-    } catch (err) {
-      console.error("Campaign launch failed", err);
-      alert("Failed to launch campaign. Check console.");
-    }
+      if (data.success) { alert(`🚀 Broadcast Complete! Sent to ${data.broadcasted} customers. Failed: ${data.failed}`); setCampaignName(''); setCampaignTemplateId(''); } 
+      else { alert(`Error: ${data.error}`); }
+    } catch (err) { alert("Failed to launch campaign. Check console."); }
   };
 
   const chatMessages = messages.filter(m => !m.is_internal);
@@ -670,7 +601,6 @@ export default function Dashboard() {
   const handoffCount = leads.filter(l => l.status === 'HANDOFF').length;
 
   const activeConversationsCount = leads.filter(l => l.status !== 'RESOLVED').length;
-
   const filteredReplies = quickReplies.filter(r => r.shortcut.toLowerCase().includes(commandQuery));
 
   const totalLeads = leads.length || 1; 
@@ -1597,7 +1527,7 @@ export default function Dashboard() {
                             </button>
                             
                             <div className={`p-4 rounded-2xl text-sm leading-relaxed shadow-xl backdrop-blur-md ${msg.is_outbound ? 'bg-gradient-to-br from-emerald-600 to-teal-600 text-white rounded-br-sm shadow-[0_8px_25px_rgba(16,185,129,0.3)] border border-emerald-400/30' : 'bg-[#1F2937] border border-white/10 text-zinc-100 rounded-bl-sm shadow-[0_8px_25px_rgba(0,0,0,0.3)]'}`}>
-                               {msg.content}
+                               {renderMessageContent(msg.content)}
                             </div>
                             
                             <span className={`text-[10px] font-bold tracking-widest uppercase mt-2 px-1 flex items-center gap-1 ${msg.is_outbound ? 'justify-end text-emerald-200/70' : 'justify-start text-zinc-500'}`}>
