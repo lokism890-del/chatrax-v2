@@ -10,7 +10,8 @@ import {
   LayoutDashboard, LayoutTemplate, BarChart2, Settings, 
   TrendingUp, Search, Calendar, Plus, Star, Zap,
   Copy, Check, CheckCheck, Edit2, Megaphone, Users, Target, PieChart, TrendingDown,
-  Key, Bell, Globe, Lock, Palette, LogOut, Eye, AlertTriangle, MousePointerClick, List
+  Key, Bell, Globe, Lock, Palette, LogOut, Eye, AlertTriangle, MousePointerClick, List,
+  UploadCloud, Shield, FileText
 } from 'lucide-react';
 import { jsPDF } from "jspdf";
 
@@ -154,6 +155,10 @@ export default function Dashboard() {
   const [now, setNow] = useState(Date.now());
   const alertedLeadsRef = useRef<Set<string>>(new Set());
 
+  // ─── ENTERPRISE AUDIT LOGS & CSV MIGRATION STATE ───
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [isUploadingCSV, setIsUploadingCSV] = useState(false);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -182,6 +187,7 @@ export default function Dashboard() {
     return () => clearInterval(timer);
   }, [router]);
 
+  // SLA Enforcer & Pulse Clock
   useEffect(() => {
     const interval = setInterval(() => {
       const currentNow = Date.now();
@@ -214,6 +220,7 @@ export default function Dashboard() {
     return () => clearInterval(interval);
   }, [leads, settings.audioAlerts]);
 
+  // Live Agent Presence Tracking Setup
   useEffect(() => {
     if (!settings.adminName) return;
 
@@ -262,6 +269,7 @@ export default function Dashboard() {
     fetchLeads();
     fetchStats();
     fetchQuickReplies();
+    fetchAuditLogs();
     const channel = supabase.channel('realtime-customers')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'customers' }, () => fetchLeads())
       .subscribe();
@@ -294,6 +302,76 @@ export default function Dashboard() {
   const fetchQuickReplies = async () => {
     const { data } = await supabase.from('quick_replies').select('*').order('created_at', { ascending: false });
     if (data) setQuickReplies(data);
+  };
+
+  // ─── ENTERPRISE SYSTEM: AUDIT LOGGER ───
+  const fetchAuditLogs = async () => {
+    const { data } = await supabase.from('audit_logs').select('*').order('created_at', { ascending: false }).limit(20);
+    if (data) setAuditLogs(data);
+  };
+
+  const logAudit = async (actionType: string, details: string) => {
+    try {
+      await supabase.from('audit_logs').insert({
+        agent_name: settings.adminName || 'System',
+        action_type: actionType,
+        details: details
+      });
+      fetchAuditLogs();
+    } catch (err) { console.error("Audit log failed", err); }
+  };
+
+  // ─── ENTERPRISE SYSTEM: CSV MIGRATION ───
+  const handleCSVUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    setIsUploadingCSV(true);
+    const reader = new FileReader();
+    
+    reader.onload = async (event) => {
+      try {
+        const text = event.target?.result as string;
+        const rows = text.split('\n');
+        const newLeads = [];
+        
+        // Assuming minimal format: Phone, Name
+        for (let i = 1; i < rows.length; i++) {
+          const cols = rows[i].split(',');
+          if (cols.length >= 1 && cols[0].trim()) {
+            let phone = cols[0].replace(/\D/g, ''); // Strip out dashes/spaces
+            if (phone) {
+              newLeads.push({
+                phone_number: phone,
+                full_name: cols[1]?.trim() || 'Imported Contact',
+                status: 'ACTIVE',
+                last_message: 'System Migration'
+              });
+            }
+          }
+        }
+
+        if (newLeads.length > 0) {
+          const { error } = await supabase.from('customers').insert(newLeads);
+          if (!error) {
+            alert(`✅ Migration Complete! Imported ${newLeads.length} leads.`);
+            logAudit('SYSTEM_MIGRATION', `Admin imported ${newLeads.length} leads via CSV.`);
+            fetchLeads();
+          } else {
+            alert("Database Error: Check console.");
+            console.error(error);
+          }
+        } else {
+          alert("No valid phone numbers found in the CSV.");
+        }
+      } catch (err) {
+        alert("Failed to parse CSV file.");
+      }
+      setIsUploadingCSV(false);
+      // Reset input so they can upload the same file again if needed
+      e.target.value = ''; 
+    };
+    reader.readAsText(file);
   };
 
   useEffect(() => {
@@ -526,10 +604,15 @@ export default function Dashboard() {
     try { await supabase.from('messages').delete().eq('id', msgId); setMessages(prev => prev.filter(m => m.id !== msgId)); } catch (err) { console.error(err); }
   };
 
-  const handleDeleteLead = async (e: React.MouseEvent, id: string) => {
+  const handleDeleteLead = async (e: React.MouseEvent, id: string, name: string) => {
     e.stopPropagation();
     if (!window.confirm('Are you sure you want to completely delete this lead and their conversation?')) return;
-    try { await supabase.from('customers').delete().eq('id', id); setLeads(prev => prev.filter(l => l.id !== id)); if (selectedLead?.id === id) setSelectedLead(null); } catch (err) { console.error(err); }
+    try { 
+      await supabase.from('customers').delete().eq('id', id); 
+      logAudit('DELETE_LEAD', `Deleted entire lead record for: ${name}`);
+      setLeads(prev => prev.filter(l => l.id !== id)); 
+      if (selectedLead?.id === id) setSelectedLead(null); 
+    } catch (err) { console.error(err); }
   };
 
   const toggleStar = (e: React.MouseEvent, id: string) => {
@@ -544,19 +627,33 @@ export default function Dashboard() {
     e.preventDefault();
     if (!draggedLead) return;
     const currentDraggedId = draggedLead;
+    const lead = leads.find(l => l.id === currentDraggedId);
+    
     setLeads(prevLeads => prevLeads.map(lead => lead.id === currentDraggedId ? { ...lead, status: newStatus } : lead));
     setDraggedLead(null);
     try {
       const { error } = await supabase.from('customers').update({ status: newStatus }).eq('id', currentDraggedId);
+      if (!error && lead) {
+         logAudit('MOVE_LEAD', `Moved lead +${lead.phone_number} to ${newStatus}`);
+      }
       if (error) { console.error("Sync error.", error); fetchLeads(); }
     } catch (err) { console.error("Sync failed:", err); fetchLeads(); }
   };
 
-  const handleTakeOver = async (id: string) => { await supabase.from('customers').update({ status: 'HANDOFF' }).eq('id', id); };
-  const handleResolveChat = async (id: string) => { await supabase.from('customers').update({ status: 'RESOLVED' }).eq('id', id); setSelectedLead(null); };
+  const handleTakeOver = async (id: string, phone: string) => { 
+    await supabase.from('customers').update({ status: 'ACTIVE' }).eq('id', id); 
+    logAudit('TAKEOVER', `Agent took over inbound lead: +${phone}`);
+  };
+
+  const handleResolveChat = async (id: string, phone: string) => { 
+    await supabase.from('customers').update({ status: 'RESOLVED' }).eq('id', id); 
+    logAudit('RESOLVE_LEAD', `Agent resolved lead: +${phone}`);
+    setSelectedLead(null); 
+  };
 
   const handleExportPDF = () => {
     if (!selectedLead) return;
+    logAudit('EXPORT_PDF', `Agent downloaded PDF intelligence report for +${selectedLead.phone_number}`);
     const doc = new jsPDF();
     const name = selectedLead.full_name || selectedLead.phone_number;
     doc.setFontSize(20); doc.setTextColor(6, 182, 212); doc.text("Chatrax Pro Intelligence Report", 20, 20);
@@ -583,7 +680,12 @@ export default function Dashboard() {
     try {
       const response = await fetch('/api/campaign', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ campaignName, audience: campaignAudience, templateId: campaignTemplateId }) });
       const data = await response.json();
-      if (data.success) { alert(`🚀 Broadcast Complete! Sent to ${data.broadcasted} customers. Failed: ${data.failed}`); setCampaignName(''); setCampaignTemplateId(''); } 
+      if (data.success) { 
+         alert(`🚀 Broadcast Complete! Sent to ${data.broadcasted} customers. Failed: ${data.failed}`); 
+         logAudit('LAUNCH_CAMPAIGN', `Launched broadcast '${campaignName}' to ${data.broadcasted} leads.`);
+         setCampaignName(''); 
+         setCampaignTemplateId(''); 
+      } 
       else { alert(`Error: ${data.error}`); }
     } catch (err) { alert("Failed to launch campaign. Check console."); }
   };
@@ -801,7 +903,7 @@ export default function Dashboard() {
 
                                   <div className="absolute top-2.5 right-2.5 flex items-center gap-1 opacity-0 group-hover/card:opacity-100 transition-opacity duration-300 z-20">
                                      <button onClick={(e) => toggleStar(e, lead.id)} className="p-1 bg-[#111827]/60 hover:bg-[#1F2937] rounded transition-colors text-zinc-400 hover:text-amber-400 border border-white/5 hover:border-amber-500/30" title="Star Lead"><Star className={`w-3 h-3 ${starredLeads.has(lead.id) ? 'fill-amber-400 text-amber-400' : ''}`} /></button>
-                                     <button onClick={(e) => handleDeleteLead(e, lead.id)} className="p-1 bg-[#111827]/60 hover:bg-red-500/20 rounded transition-colors text-zinc-400 hover:text-red-400 border border-white/5 hover:border-red-500/30" title="Delete Conversation"><Trash2 className="w-3 h-3" /></button>
+                                     <button onClick={(e) => handleDeleteLead(e, lead.id, lead.full_name || lead.phone_number)} className="p-1 bg-[#111827]/60 hover:bg-red-500/20 rounded transition-colors text-zinc-400 hover:text-red-400 border border-white/5 hover:border-red-500/30" title="Delete Conversation"><Trash2 className="w-3 h-3" /></button>
                                   </div>
                                   
                                   <div className="flex flex-col items-start mb-2.5 pl-1 pr-10 relative z-10">
@@ -890,7 +992,7 @@ export default function Dashboard() {
 
                                   <div className="absolute top-2.5 right-2.5 flex items-center gap-1 opacity-0 group-hover/card:opacity-100 transition-opacity duration-300 z-20">
                                      <button onClick={(e) => toggleStar(e, lead.id)} className="p-1 bg-[#111827]/60 hover:bg-[#1F2937] rounded transition-colors text-zinc-400 hover:text-amber-400 border border-white/5 hover:border-amber-500/30" title="Star Lead"><Star className={`w-3 h-3 ${starredLeads.has(lead.id) ? 'fill-amber-400 text-amber-400' : ''}`} /></button>
-                                     <button onClick={(e) => handleDeleteLead(e, lead.id)} className="p-1 bg-[#111827]/60 hover:bg-red-500/20 rounded transition-colors text-zinc-400 hover:text-red-400 border border-white/5 hover:border-red-500/30" title="Delete Conversation"><Trash2 className="w-3 h-3" /></button>
+                                     <button onClick={(e) => handleDeleteLead(e, lead.id, lead.full_name || lead.phone_number)} className="p-1 bg-[#111827]/60 hover:bg-red-500/20 rounded transition-colors text-zinc-400 hover:text-red-400 border border-white/5 hover:border-red-500/30" title="Delete Conversation"><Trash2 className="w-3 h-3" /></button>
                                   </div>
                                   
                                   <div className="flex flex-col items-start mb-2.5 pl-1 pr-10 relative z-10">
@@ -1142,60 +1244,99 @@ export default function Dashboard() {
           <div className="flex flex-col h-full animate-[fade-in_0.3s_ease-out]">
             <div className="h-20 flex items-center justify-between px-6 border-b border-white/10 bg-[#111827]/80 backdrop-blur-xl shrink-0">
               <div>
-                <h2 className="text-lg font-bold text-white drop-shadow-md">System Settings</h2>
-                <p className="text-[10px] text-zinc-400 font-medium tracking-wide mt-0.5">Manage your CRM integrations, team, and preferences</p>
+                <h2 className="text-lg font-bold text-white drop-shadow-md">System Settings & Data</h2>
+                <p className="text-[10px] text-zinc-400 font-medium tracking-wide mt-0.5">Manage your CRM integrations, data migration, and security logs</p>
               </div>
             </div>
             <div className="flex-1 overflow-y-auto custom-scrollbar p-6">
-               <div className="max-w-4xl mx-auto space-y-6">
-                  <div className="bg-[#1F2937]/60 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-2xl">
-                     <h3 className="text-xs font-bold text-white flex items-center gap-1.5 mb-5"><Palette className="w-4 h-4 text-pink-400" /> Interface Appearance</h3>
-                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                        <button onClick={() => handleThemeChange('nebula')} className={`flex flex-col items-center justify-center gap-2 px-3 py-5 rounded-xl border font-bold text-[10px] transition-all duration-300 ${theme === 'nebula' ? 'border-pink-400 bg-pink-500/10 text-white shadow-sm' : 'border-white/10 text-zinc-400 hover:bg-white/5'}`}>
-                          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#0F172A] via-[#1E293B] to-[#0F172A] border border-white/20"></div> Nebula Dark
-                        </button>
-                        <button onClick={() => handleThemeChange('grey')} className={`flex flex-col items-center justify-center gap-2 px-3 py-5 rounded-xl border font-bold text-[10px] transition-all duration-300 ${theme === 'grey' ? 'border-pink-400 bg-pink-500/10 text-white shadow-sm' : 'border-white/10 text-zinc-400 hover:bg-white/5'}`}>
-                          <div className="w-10 h-10 rounded-full bg-[#1e1e24] border border-white/20"></div> Soothing Grey
-                        </button>
-                        <button onClick={() => handleThemeChange('black')} className={`flex flex-col items-center justify-center gap-2 px-3 py-5 rounded-xl border font-bold text-[10px] transition-all duration-300 ${theme === 'black' ? 'border-pink-400 bg-pink-500/10 text-white shadow-sm' : 'border-white/10 text-zinc-400 hover:bg-white/5'}`}>
-                          <div className="w-10 h-10 rounded-full bg-black border border-white/20"></div> Pure Black
-                        </button>
-                     </div>
-                  </div>
-                  <div className="bg-[#1F2937]/60 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-2xl">
-                     <h3 className="text-xs font-bold text-white flex items-center gap-1.5 mb-5"><Globe className="w-4 h-4 text-sky-400" /> API Integrations</h3>
-                     <div className="space-y-5">
-                        <div className="bg-[#111827]/60 rounded-xl p-5 border border-white/5">
-                           <div className="flex items-center justify-between mb-3">
-                              <h4 className="text-white font-bold text-xs flex items-center gap-1.5">WhatsApp / Meta API</h4>
-                              <span className="px-2.5 py-0.5 bg-emerald-500/20 text-emerald-400 text-[9px] font-bold uppercase rounded border border-emerald-500/30">Configured</span>
-                           </div>
-                           <div className="space-y-3">
-                              <div>
-                                 <label className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest pl-1">Permanent Access Token</label>
-                                 <input type="text" value={settings.metaToken} onChange={(e) => setSettings({...settings, metaToken: e.target.value})} placeholder="EAAGm0PX4ZCQoBO..." className="w-full mt-1 bg-[#1F2937]/80 border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:border-sky-400 outline-none transition-colors" />
-                              </div>
-                              <div>
-                                 <label className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest pl-1">Phone Number ID</label>
-                                 <input type="text" value={settings.metaPhoneId} onChange={(e) => setSettings({...settings, metaPhoneId: e.target.value})} placeholder="e.g. 103948273948" className="w-full mt-1 bg-[#1F2937]/80 border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:border-sky-400 outline-none transition-colors" />
-                              </div>
-                           </div>
-                        </div>
-                        <div className="bg-[#111827]/60 rounded-xl p-5 border border-white/5">
-                           <div className="flex items-center justify-between mb-3">
-                              <h4 className="text-white font-bold text-xs flex items-center gap-1.5">Shopify Store API</h4>
-                              <span className="px-2.5 py-0.5 bg-emerald-500/20 text-emerald-400 text-[9px] font-bold uppercase rounded border border-emerald-500/30">Configured</span>
-                           </div>
-                           <div className="space-y-3">
-                              <div>
-                                 <label className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest pl-1">Store Domain</label>
-                                 <input type="text" value={settings.shopifyDomain} onChange={(e) => setSettings({...settings, shopifyDomain: e.target.value})} placeholder="my-store.myshopify.com" className="w-full mt-1 bg-[#1F2937]/80 border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:border-sky-400 outline-none transition-colors" />
-                              </div>
-                           </div>
+               <div className="max-w-6xl mx-auto grid grid-cols-1 xl:grid-cols-2 gap-6">
+                  
+                  {/* Left Column */}
+                  <div className="space-y-6">
+                    <div className="bg-[#1F2937]/60 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-2xl">
+                       <h3 className="text-xs font-bold text-white flex items-center gap-1.5 mb-5"><Globe className="w-4 h-4 text-sky-400" /> API Integrations</h3>
+                       <div className="space-y-5">
+                          <div className="bg-[#111827]/60 rounded-xl p-5 border border-white/5">
+                             <div className="flex items-center justify-between mb-3">
+                                <h4 className="text-white font-bold text-xs flex items-center gap-1.5">WhatsApp / Meta API</h4>
+                                <span className="px-2.5 py-0.5 bg-emerald-500/20 text-emerald-400 text-[9px] font-bold uppercase rounded border border-emerald-500/30">Configured</span>
+                             </div>
+                             <div className="space-y-3">
+                                <div><label className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest pl-1">Permanent Access Token</label><input type="text" value={settings.metaToken} onChange={(e) => setSettings({...settings, metaToken: e.target.value})} placeholder="EAAGm0PX4ZCQoBO..." className="w-full mt-1 bg-[#1F2937]/80 border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:border-sky-400 outline-none transition-colors" /></div>
+                                <div><label className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest pl-1">Phone Number ID</label><input type="text" value={settings.metaPhoneId} onChange={(e) => setSettings({...settings, metaPhoneId: e.target.value})} placeholder="e.g. 103948273948" className="w-full mt-1 bg-[#1F2937]/80 border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:border-sky-400 outline-none transition-colors" /></div>
+                             </div>
+                          </div>
+                          <div className="bg-[#111827]/60 rounded-xl p-5 border border-white/5">
+                             <div className="flex items-center justify-between mb-3">
+                                <h4 className="text-white font-bold text-xs flex items-center gap-1.5">Shopify Store API</h4>
+                                <span className="px-2.5 py-0.5 bg-emerald-500/20 text-emerald-400 text-[9px] font-bold uppercase rounded border border-emerald-500/30">Configured</span>
+                             </div>
+                             <div><label className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest pl-1">Store Domain</label><input type="text" value={settings.shopifyDomain} onChange={(e) => setSettings({...settings, shopifyDomain: e.target.value})} placeholder="my-store.myshopify.com" className="w-full mt-1 bg-[#1F2937]/80 border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:border-sky-400 outline-none transition-colors" /></div>
+                          </div>
+                       </div>
+                    </div>
+
+                    <div className="bg-[#1F2937]/60 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-2xl">
+                        <h3 className="text-xs font-bold text-white flex items-center gap-1.5 mb-5"><Lock className="w-4 h-4 text-purple-400" /> Admin Profile</h3>
+                        <div className="space-y-3">
+                           <div><label className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest pl-1">Display Name</label><input type="text" value={settings.adminName} onChange={(e) => setSettings({...settings, adminName: e.target.value})} className="w-full bg-[#111827]/80 border border-white/10 rounded-lg px-3 py-2 text-xs text-white mt-1 outline-none focus:border-purple-400 transition-colors" /></div>
+                           <div><label className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest pl-1">Email Address</label><input type="email" value={settings.adminEmail} onChange={(e) => setSettings({...settings, adminEmail: e.target.value})} className="w-full bg-[#111827]/80 border border-white/10 rounded-lg px-3 py-2 text-xs text-white mt-1 outline-none focus:border-purple-400 transition-colors" /></div>
+                           <button onClick={() => { alert('Profile Updated Locally!'); logAudit('UPDATE_PROFILE', 'Admin profile information was updated.'); }} className="w-full py-2.5 bg-purple-500/20 text-purple-400 border border-purple-500/40 rounded-lg font-bold text-xs hover:bg-purple-500/30 transition-colors mt-2 shadow-sm">Update Profile</button>
                         </div>
                      </div>
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+                  {/* Right Column */}
+                  <div className="space-y-6">
+                     {/* Database Migration (CSV) */}
+                     <div className="bg-[#1F2937]/60 backdrop-blur-xl border border-emerald-500/20 rounded-2xl p-6 shadow-[0_0_30px_rgba(16,185,129,0.05)] relative overflow-hidden">
+                        <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 blur-[50px] pointer-events-none"></div>
+                        <h3 className="text-xs font-bold text-emerald-400 flex items-center gap-1.5 mb-2"><UploadCloud className="w-4 h-4" /> Database Migration</h3>
+                        <p className="text-[10px] text-zinc-400 mb-5">Upload a CSV file containing (Phone, Name) to instantly populate your ACTIVE pipeline.</p>
+                        
+                        <div className="relative border-2 border-dashed border-emerald-500/30 bg-[#111827]/60 rounded-xl p-8 flex flex-col items-center justify-center text-center transition-all hover:border-emerald-500/50 hover:bg-[#111827]/80 cursor-pointer">
+                           <input 
+                              type="file" 
+                              accept=".csv" 
+                              onChange={handleCSVUpload} 
+                              disabled={isUploadingCSV}
+                              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" 
+                           />
+                           {isUploadingCSV ? (
+                              <Loader2 className="w-8 h-8 text-emerald-500 animate-spin mb-2" />
+                           ) : (
+                              <FileText className="w-8 h-8 text-emerald-500/70 mb-2" />
+                           )}
+                           <span className="text-xs font-bold text-emerald-300">{isUploadingCSV ? "Processing Database..." : "Click or Drag CSV to Import"}</span>
+                           <span className="text-[9px] text-zinc-500 mt-1">Required format: Phone Number, Full Name</span>
+                        </div>
+                     </div>
+
+                     {/* Security & Audit Trail */}
+                     <div className="bg-[#1F2937]/60 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-2xl flex flex-col h-[380px]">
+                        <h3 className="text-xs font-bold text-white flex items-center gap-1.5 mb-2"><Shield className="w-4 h-4 text-blue-400" /> Security & Audit Console</h3>
+                        <p className="text-[10px] text-zinc-400 mb-4">Immutable log of system actions for accountability.</p>
+                        
+                        <div className="flex-1 bg-black/60 rounded-xl border border-white/5 p-4 font-mono text-[9px] overflow-y-auto custom-scrollbar shadow-inner relative">
+                           {auditLogs.length === 0 ? (
+                              <div className="h-full flex items-center justify-center text-zinc-600">No logs recorded yet.</div>
+                           ) : (
+                              <div className="space-y-3">
+                                 {auditLogs.map((log) => (
+                                    <div key={log.id} className="border-l-2 border-blue-500/50 pl-3 py-0.5">
+                                       <div className="flex justify-between items-start mb-0.5">
+                                          <span className="text-blue-400 font-bold uppercase tracking-wider">{log.action_type}</span>
+                                          <span className="text-zinc-500">{new Date(log.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+                                       </div>
+                                       <p className="text-zinc-300"><span className="text-emerald-400">{log.agent_name}</span> &mdash; {log.details}</p>
+                                    </div>
+                                 ))}
+                              </div>
+                           )}
+                        </div>
+                     </div>
+
+                     {/* Notifications */}
                      <div className="bg-[#1F2937]/60 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-2xl">
                         <h3 className="text-xs font-bold text-white flex items-center gap-1.5 mb-5"><Bell className="w-4 h-4 text-amber-400" /> Notifications</h3>
                         <div className="space-y-3">
@@ -1203,20 +1344,9 @@ export default function Dashboard() {
                               <div><p className="text-xs font-bold text-white">Audio Alerts</p><p className="text-[9px] text-zinc-400 mt-0.5">Play a sound for incoming messages</p></div>
                               <div className={`w-8 h-5 rounded-full relative transition-colors duration-300 ${settings.audioAlerts ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]' : 'bg-zinc-600'}`}><div className={`w-3.5 h-3.5 bg-white rounded-full absolute top-[3px] transition-all duration-300 ${settings.audioAlerts ? 'right-[3px]' : 'left-[3px]'}`}></div></div>
                            </div>
-                           <div onClick={() => setSettings({...settings, desktopNotifications: !settings.desktopNotifications})} className="flex items-center justify-between p-3 bg-[#111827]/50 rounded-lg border border-white/5 hover:border-white/10 transition-colors cursor-pointer">
-                              <div><p className="text-xs font-bold text-white">Desktop Notifications</p><p className="text-[9px] text-zinc-400 mt-0.5">Show browser push notifications</p></div>
-                              <div className={`w-8 h-5 rounded-full relative transition-colors duration-300 ${settings.desktopNotifications ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]' : 'bg-zinc-600'}`}><div className={`w-3.5 h-3.5 bg-white rounded-full absolute top-[3px] transition-all duration-300 ${settings.desktopNotifications ? 'right-[3px]' : 'left-[3px]'}`}></div></div>
-                           </div>
                         </div>
                      </div>
-                     <div className="bg-[#1F2937]/60 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-2xl">
-                        <h3 className="text-xs font-bold text-white flex items-center gap-1.5 mb-5"><Lock className="w-4 h-4 text-purple-400" /> Admin Profile</h3>
-                        <div className="space-y-3">
-                           <div><label className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest pl-1">Display Name</label><input type="text" value={settings.adminName} onChange={(e) => setSettings({...settings, adminName: e.target.value})} className="w-full bg-[#111827]/80 border border-white/10 rounded-lg px-3 py-2 text-xs text-white mt-1 outline-none focus:border-purple-400 transition-colors" /></div>
-                           <div><label className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest pl-1">Email Address</label><input type="email" value={settings.adminEmail} onChange={(e) => setSettings({...settings, adminEmail: e.target.value})} className="w-full bg-[#111827]/80 border border-white/10 rounded-lg px-3 py-2 text-xs text-white mt-1 outline-none focus:border-purple-400 transition-colors" /></div>
-                           <button onClick={() => alert('Profile Updated Locally!')} className="w-full py-2.5 bg-purple-500/20 text-purple-400 border border-purple-500/40 rounded-lg font-bold text-xs hover:bg-purple-500/30 transition-colors mt-2 shadow-sm">Update Profile</button>
-                        </div>
-                     </div>
+
                   </div>
                </div>
             </div>
@@ -1239,8 +1369,8 @@ export default function Dashboard() {
                         </div>
                     </div>
                     <div className="flex items-center gap-2.5 relative z-10">
-                        {selectedLead.status === 'NEW_ORDER' && <button onClick={() => handleTakeOver(selectedLead.id)} className="px-3 py-1.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:border-emerald-400 hover:bg-emerald-500/30 rounded-full text-[9px] font-bold uppercase transition-all shadow-sm">Take Over</button>}
-                        <button onClick={() => handleResolveChat(selectedLead.id)} className="px-3 py-1.5 bg-lime-500/20 text-lime-300 border border-lime-500/40 hover:border-lime-400 hover:bg-lime-500/30 rounded-full text-[9px] font-bold uppercase transition-all shadow-sm">Resolve</button>
+                        {selectedLead.status === 'NEW_ORDER' && <button onClick={() => handleTakeOver(selectedLead.id, selectedLead.phone_number)} className="px-3 py-1.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:border-emerald-400 hover:bg-emerald-500/30 rounded-full text-[9px] font-bold uppercase transition-all shadow-sm">Take Over</button>}
+                        <button onClick={() => handleResolveChat(selectedLead.id, selectedLead.phone_number)} className="px-3 py-1.5 bg-lime-500/20 text-lime-300 border border-lime-500/40 hover:border-lime-400 hover:bg-lime-500/30 rounded-full text-[9px] font-bold uppercase transition-all shadow-sm">Resolve</button>
                         <button onClick={() => setSelectedLead(null)} className="p-1.5 hover:bg-white/10 hover:rotate-90 rounded-full text-zinc-300 transition-all"><X className="w-4 h-4"/></button>
                     </div>
                 </div>
@@ -1338,7 +1468,7 @@ export default function Dashboard() {
 
                 <div className="p-5 shrink-0 border-t border-white/10 bg-[#111827]/90 backdrop-blur-md">
                     <button type="button" onClick={handleExportPDF} className="group relative overflow-hidden w-full flex items-center justify-center gap-1.5 py-3 bg-[#1F2937] hover:bg-emerald-500/20 border border-white/10 hover:border-emerald-400/50 rounded-xl text-[9px] font-bold uppercase tracking-widest transition-all text-zinc-300 hover:text-white hover:shadow-[0_5px_15px_rgba(16,185,129,0.2)] hover:-translate-y-0.5 active:translate-y-0">
-                        <div className="absolute inset-0 w-[50%] h-full bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-[150%] group-hover:animate-[sweep_1.5s_ease-in-out_infinite]" />
+                        <div className="absolute inset-0 w-[50%] h-full bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-[150%] group-hover:animate-[sweep_1.5s_infinite]" />
                         <Download className="w-3.5 h-3.5 relative z-10 transition-transform duration-300 group-hover:-translate-y-0.5"/> <span className="relative z-10">Export Intelligence</span>
                     </button>
                 </div>
