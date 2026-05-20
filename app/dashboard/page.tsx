@@ -8,17 +8,30 @@ import {
   ShoppingBag, Loader2, LayoutDashboard, Settings, Search, Star, Zap,
   Megaphone, AlertTriangle, List, ShieldAlert, Sparkles, Tag, User, FileText, CreditCard, Download,
   LayoutTemplate, BarChart2, LogOut, Check, Copy, Edit2, CheckCheck, Users, Target, PieChart, 
-  TrendingDown, TrendingUp, Bell, Globe, Lock
+  TrendingDown, TrendingUp, Bell, Globe, Lock, UploadCloud, Shield, MousePointerClick, StickyNote
 } from 'lucide-react';
 import { jsPDF } from "jspdf";
 
+// ─── STRICT TYPESCRIPT DEFINITION ───
+type ThemeColor = {
+  text: string;
+  bg: string;
+  bgSubtle: string;
+  border: string;
+  borderActive: string;
+  focusBorder: string;
+  hoverBg: string;
+  gradient: string;
+  shadow: string;
+};
+
 // ─── STATIC CONFIGURATIONS ───
-const BRAND_COLORS = {
-  emerald: { text: 'text-emerald-400', bg: 'bg-emerald-500', bgSubtle: 'bg-emerald-500/10', border: 'border-emerald-500/20', focusBorder: 'focus:border-emerald-500/50', gradient: 'from-emerald-500 to-teal-500' },
-  blue: { text: 'text-blue-400', bg: 'bg-blue-500', bgSubtle: 'bg-blue-500/10', border: 'border-blue-500/20', focusBorder: 'focus:border-blue-500/50', gradient: 'from-blue-500 to-indigo-500' },
-  purple: { text: 'text-purple-400', bg: 'bg-purple-500', bgSubtle: 'bg-purple-500/10', border: 'border-purple-500/20', focusBorder: 'focus:border-purple-500/50', gradient: 'from-purple-500 to-fuchsia-500' },
-  rose: { text: 'text-rose-400', bg: 'bg-rose-500', bgSubtle: 'bg-rose-500/10', border: 'border-rose-500/20', focusBorder: 'focus:border-rose-500/50', gradient: 'from-rose-500 to-pink-500' },
-  amber: { text: 'text-amber-400', bg: 'bg-amber-500', bgSubtle: 'bg-amber-500/10', border: 'border-amber-500/20', focusBorder: 'focus:border-amber-500/50', gradient: 'from-amber-500 to-orange-500' }
+const BRAND_COLORS: Record<string, ThemeColor> = {
+  emerald: { text: 'text-emerald-400', bg: 'bg-emerald-500', bgSubtle: 'bg-emerald-500/10', border: 'border-emerald-500/20', borderActive: 'border-emerald-500/40', focusBorder: 'focus:border-emerald-500/50', hoverBg: 'hover:bg-emerald-500/20', gradient: 'from-emerald-500 to-teal-500', shadow: 'shadow-[0_0_15px_rgba(16,185,129,0.1)]' },
+  blue: { text: 'text-blue-400', bg: 'bg-blue-500', bgSubtle: 'bg-blue-500/10', border: 'border-blue-500/20', borderActive: 'border-blue-500/40', focusBorder: 'focus:border-blue-500/50', hoverBg: 'hover:bg-blue-500/20', gradient: 'from-blue-500 to-indigo-500', shadow: 'shadow-[0_0_15px_rgba(59,130,246,0.1)]' },
+  purple: { text: 'text-purple-400', bg: 'bg-purple-500', bgSubtle: 'bg-purple-500/10', border: 'border-purple-500/20', borderActive: 'border-purple-500/40', focusBorder: 'focus:border-purple-500/50', hoverBg: 'hover:bg-purple-500/20', gradient: 'from-purple-500 to-fuchsia-500', shadow: 'shadow-[0_0_15px_rgba(168,85,247,0.1)]' },
+  rose: { text: 'text-rose-400', bg: 'bg-rose-500', bgSubtle: 'bg-rose-500/10', border: 'border-rose-500/20', borderActive: 'border-rose-500/40', focusBorder: 'focus:border-rose-500/50', hoverBg: 'hover:bg-rose-500/20', gradient: 'from-rose-500 to-pink-500', shadow: 'shadow-[0_0_15px_rgba(244,63,94,0.1)]' },
+  amber: { text: 'text-amber-400', bg: 'bg-amber-500', bgSubtle: 'bg-amber-500/10', border: 'border-amber-500/20', borderActive: 'border-amber-500/40', focusBorder: 'focus:border-amber-500/50', hoverBg: 'hover:bg-amber-500/20', gradient: 'from-amber-500 to-orange-500', shadow: 'shadow-[0_0_15px_rgba(245,158,11,0.1)]' }
 };
 
 const AVAILABLE_TAGS = [
@@ -86,7 +99,7 @@ export default function Dashboard() {
 
   // ─── SUBSCRIPTION & BILLING STATE ───
   const [subscription, setSubscription] = useState({
-    status: 'trialing', // Can be 'trialing', 'active', or 'past_due' (locked)
+    status: 'trialing', 
     daysLeft: 7,
     plan: 'Free Trial',
     messageLimit: 1000
@@ -94,7 +107,6 @@ export default function Dashboard() {
 
   const handleUpgrade = async (planType: string) => {
     try {
-      // In production, this POSTs to /api/stripe/checkout and redirects to the URL
       alert(`Simulating Stripe Redirect: Purchasing ChatRax ${planType} plan...`);
       setSubscription({ 
          ...subscription, 
@@ -380,7 +392,7 @@ export default function Dashboard() {
                 <button onClick={() => setActiveView('templates')} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors font-medium text-sm ${activeView === 'templates' ? 'bg-[#1E293B] text-white' : 'text-zinc-400 hover:bg-[#1E293B]/50 hover:text-white'}`}><LayoutTemplate className="w-4 h-4" /> Templates</button>
                 <button onClick={() => setActiveView('analytics')} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors font-medium text-sm ${activeView === 'analytics' ? 'bg-[#1E293B] text-white' : 'text-zinc-400 hover:bg-[#1E293B]/50 hover:text-white'}`}><BarChart2 className="w-4 h-4" /> Analytics</button>
                 <button onClick={() => setActiveView('billing')} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors font-medium text-sm ${activeView === 'billing' ? 'bg-[#1E293B] text-white' : 'text-zinc-400 hover:bg-[#1E293B]/50 hover:text-white'}`}><CreditCard className="w-4 h-4" /> Billing</button>
-                <button onClick={() => setActiveView('settings')} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors font-medium text-sm ${activeView === 'settings' ? 'bg-[#10b981]/20 text-[#10b981]' : 'text-zinc-400 hover:bg-[#1E293B]/50 hover:text-white'}`}><Settings className="w-4 h-4" /> Settings</button>
+                <button onClick={() => setActiveView('settings')} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors font-medium text-sm ${activeView === 'settings' ? 'bg-[#1E293B] text-white' : 'text-zinc-400 hover:bg-[#1E293B]/50 hover:text-white'}`}><Settings className="w-4 h-4" /> Settings</button>
              </>
           )}
         </div>
@@ -408,8 +420,8 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* ─── MAIN VIEWPORT (Strictly locked to flex-1 and min-h-0) ─── */}
-      <div className="flex-1 flex flex-col h-full overflow-hidden relative z-30">
+      {/* ─── MAIN VIEWPORT (Global Layout unlocked to allow vertical page scrolling) ─── */}
+      <div className="flex-1 flex flex-col h-full relative z-30">
         
         {/* DASHBOARD VIEW */}
         {activeView === 'dashboard' && userRole === 'ADMIN' && (
@@ -427,8 +439,8 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* Master layout lock for Kanban scrolling */}
-            <div className="flex-1 p-6 flex flex-col overflow-hidden min-h-0">
+            {/* This is the master layout lock for Kanban scrolling. It lets the whole page scroll. */}
+            <div className="flex-1 p-6 flex flex-col overflow-y-auto custom-scrollbar">
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6 shrink-0">
                   <div className="bg-[#1E293B]/50 border border-white/5 rounded-xl p-4 relative overflow-hidden">
                      <div className={`absolute top-0 left-0 w-1 h-full ${activeTheme.bg}`} />
@@ -471,67 +483,64 @@ export default function Dashboard() {
                   </div>
                 </div>
 
-                <div className="flex-1 flex flex-col overflow-hidden min-h-0">
-                  <div className="flex items-center justify-between mb-4 shrink-0">
-                     <h3 className="text-sm font-bold text-white">Live Action Board</h3>
-                     <div className="relative w-64">
-                        <Search className="w-3.5 h-3.5 text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2" />
-                        <input type="text" placeholder="Search database..." value={globalSearch} onChange={(e) => setGlobalSearch(e.target.value)} className={`w-full bg-[#1E293B] border border-transparent rounded-lg pl-9 pr-3 py-1.5 text-xs text-white ${activeTheme.focusBorder} outline-none transition-colors placeholder-zinc-500`} />
-                     </div>
+                <div className="flex items-center justify-between mb-4 shrink-0">
+                  <h3 className="text-sm font-bold text-white drop-shadow-sm">Live Action Board</h3>
+                  <div className="relative w-64">
+                     <Search className="w-3.5 h-3.5 text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                     <input type="text" placeholder="Search database..." value={globalSearch} onChange={(e) => setGlobalSearch(e.target.value)} className={`w-full bg-[#1E293B] border border-transparent rounded-lg pl-9 pr-3 py-1.5 text-xs text-white ${activeTheme.focusBorder} outline-none transition-colors placeholder-zinc-500`} />
                   </div>
+                </div>
 
-                  <div className="flex flex-1 gap-4 overflow-x-auto min-h-0 pb-2">
-                    {COLUMNS.map((status) => {
-                      const config = COLUMN_CONFIG[status];
-                      const ColumnIcon = config.icon;
-                      const colLeads = searchedLeads.filter(l => l.status === status);
+                {/* Removing height locks so columns grow down as far as they need to */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-start pb-6">
+                  {COLUMNS.map((status) => {
+                    const config = COLUMN_CONFIG[status];
+                    const ColumnIcon = config.icon;
+                    const colLeads = searchedLeads.filter(l => l.status === status);
 
-                      return (
-                        <div key={status} onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, status)} className="flex flex-col flex-1 min-w-[280px] h-full overflow-hidden min-h-0 bg-[#0F172A] rounded-xl border border-white/5">
-                          
-                          <div className="flex items-center justify-between p-3 border-b border-white/5 shrink-0 bg-[#111827]">
-                            <div className="flex items-center gap-2">
-                               <ColumnIcon className="w-3.5 h-3.5" style={{ color: config.hex }} />
-                               <h2 className="text-[10px] font-bold tracking-widest text-zinc-400 uppercase">{status.replace('_', ' ')}</h2>
-                            </div>
-                            <span className="text-[10px] bg-[#1E293B] text-zinc-300 px-2 py-0.5 rounded-full font-bold">{colLeads.length}</span>
+                    return (
+                      <div key={status} onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, status)} className="flex flex-col bg-[#0F172A] rounded-xl border border-white/5 min-h-[300px]">
+                        
+                        <div className="flex items-center justify-between p-3 border-b border-white/5 shrink-0 bg-[#111827] rounded-t-xl">
+                          <div className="flex items-center gap-2">
+                             <ColumnIcon className="w-3.5 h-3.5" style={{ color: config.hex }} />
+                             <h2 className="text-[10px] font-bold tracking-widest text-zinc-400 uppercase">{status.replace('_', ' ')}</h2>
                           </div>
-
-                          <div className={`flex-1 overflow-y-auto custom-scrollbar p-2 min-h-0`}>
-                             <div className="flex flex-col gap-2">
-                               {colLeads.map((lead) => {
-                                 const isSlaBreached = status === 'NEW_ORDER' && (now - new Date(lead.created_at).getTime() > 900000);
-                                 const isDragging = draggedLead === lead.id;
-
-                                 return (
-                                   <div key={lead.id} draggable onDragStart={(e) => handleDragStart(e, lead.id)} onDragEnd={handleDragEnd} onClick={() => setSelectedLead(lead)} 
-                                     className={`p-3.5 bg-[#1E293B] rounded-lg border cursor-grab active:cursor-grabbing hover:border-zinc-500 transition-colors ${isDragging ? 'opacity-40 border-dashed border-zinc-500' : 'border-white/5'} ${isSlaBreached ? 'border-red-500/30 bg-red-500/5' : ''}`}>
-                                     
-                                     {lead.tags && lead.tags.length > 0 && (
-                                        <div className="flex flex-wrap gap-1 mb-2">
-                                           {lead.tags.map((tagId: string) => {
-                                              const tagMeta = AVAILABLE_TAGS.find(t => t.id === tagId);
-                                              if (!tagMeta) return null;
-                                              return ( <span key={tagId} className={`text-[8px] font-bold uppercase tracking-widest px-1.5 py-[2px] rounded border ${tagMeta.color}`}>{tagMeta.label}</span> );
-                                           })}
-                                        </div>
-                                     )}
-
-                                     <div className="flex justify-between items-start mb-0.5">
-                                       <span className="font-sans text-sm font-semibold text-white">{lead.full_name || 'Store Customer'}</span>
-                                       {isSlaBreached && <AlertTriangle className="w-3.5 h-3.5 text-red-400" />}
-                                     </div>
-                                     <span className="text-[10px] text-zinc-500">+{lead.phone_number}</span>
-                                   </div>
-                                 );
-                               })}
-                             </div>
-                          </div>
+                          <span className="text-[10px] bg-[#1E293B] text-zinc-300 px-2 py-0.5 rounded-full font-bold">{colLeads.length}</span>
                         </div>
-                      );
-                    })}
-                  </div>
-               </div>
+
+                        <div className="p-2 flex flex-col gap-2">
+                             {colLeads.map((lead) => {
+                               const isSlaBreached = status === 'NEW_ORDER' && (now - new Date(lead.created_at).getTime() > 900000);
+                               const isDragging = draggedLead === lead.id;
+
+                               return (
+                                 <div key={lead.id} draggable onDragStart={(e) => handleDragStart(e, lead.id)} onDragEnd={handleDragEnd} onClick={() => setSelectedLead(lead)} 
+                                   className={`p-3.5 bg-[#1E293B] rounded-lg border cursor-grab active:cursor-grabbing hover:border-zinc-500 transition-colors ${isDragging ? 'opacity-40 border-dashed border-zinc-500' : 'border-white/5'} ${isSlaBreached ? 'border-red-500/30 bg-red-500/5' : ''}`}>
+                                   
+                                   {lead.tags && lead.tags.length > 0 && (
+                                      <div className="flex flex-wrap gap-1 mb-2">
+                                         {lead.tags.map((tagId: string) => {
+                                            const tagMeta = AVAILABLE_TAGS.find(t => t.id === tagId);
+                                            if (!tagMeta) return null;
+                                            return ( <span key={tagId} className={`text-[8px] font-bold uppercase tracking-widest px-1.5 py-[2px] rounded border ${tagMeta.color}`}>{tagMeta.label}</span> );
+                                         })}
+                                      </div>
+                                   )}
+
+                                   <div className="flex justify-between items-start mb-0.5">
+                                     <span className="font-sans text-sm font-semibold text-white">{lead.full_name || 'Store Customer'}</span>
+                                     {isSlaBreached && <AlertTriangle className="w-3.5 h-3.5 text-red-400" />}
+                                   </div>
+                                   <span className="text-[10px] text-zinc-500">+{lead.phone_number}</span>
+                                 </div>
+                               );
+                             })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
             </div>
           </div>
         )}
@@ -549,25 +558,26 @@ export default function Dashboard() {
                   <input type="text" placeholder="Search database..." value={globalSearch} onChange={(e) => setGlobalSearch(e.target.value)} className={`w-full bg-[#1E293B] border border-transparent rounded-lg pl-9 pr-3 py-1.5 text-xs text-white ${activeTheme.focusBorder} outline-none transition-colors placeholder-zinc-500`} />
                </div>
             </div>
-            <div className="flex-1 p-6 flex flex-col overflow-hidden min-h-0">
-               <div className="bg-[#111827]/60 backdrop-blur-xl border border-white/10 rounded-2xl p-5 shadow-2xl flex flex-col flex-1 overflow-hidden min-h-0">
-                  <div className="flex flex-1 gap-4 overflow-x-auto min-h-0 pb-2">
+            
+            <div className="flex-1 overflow-y-auto custom-scrollbar p-6">
+               <div className="bg-[#111827]/60 backdrop-blur-xl border border-white/10 rounded-2xl p-5 shadow-2xl">
+                  <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 items-start">
                     {COLUMNS.map((status) => {
                       const config = COLUMN_CONFIG[status];
                       const ColumnIcon = config.icon;
                       const colLeads = searchedLeads.filter(l => l.status === status);
 
                       return (
-                        <div key={status} onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, status)} className="flex flex-col flex-1 min-w-[280px] h-full overflow-hidden min-h-0 bg-[#0F172A] rounded-xl border border-white/5">
-                          <div className="flex items-center justify-between p-3 border-b border-white/5 shrink-0 bg-[#111827]">
+                        <div key={status} onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, status)} className="flex flex-col bg-[#0F172A] rounded-xl border border-white/5 min-h-[300px]">
+                          <div className="flex items-center justify-between p-3 border-b border-white/5 shrink-0 bg-[#111827] rounded-t-xl">
                             <div className="flex items-center gap-2">
                                <ColumnIcon className="w-3.5 h-3.5" style={{ color: config.hex }} />
                                <h2 className="text-[10px] font-bold tracking-widest text-zinc-400 uppercase">{status.replace('_', ' ')}</h2>
                             </div>
                             <span className="text-[10px] bg-[#1E293B] text-zinc-300 px-2 py-0.5 rounded-full font-bold">{colLeads.length}</span>
                           </div>
-                          <div className="flex-1 overflow-y-auto custom-scrollbar p-2 min-h-0">
-                             <div className="flex flex-col gap-2">
+                          
+                          <div className="p-2 flex flex-col gap-2">
                                {colLeads.map((lead) => {
                                  const isSlaBreached = status === 'NEW_ORDER' && (now - new Date(lead.created_at).getTime() > 900000);
                                  const isDragging = draggedLead === lead.id;
@@ -593,7 +603,6 @@ export default function Dashboard() {
                                    </div>
                                  );
                                })}
-                             </div>
                           </div>
                         </div>
                       );
@@ -604,7 +613,7 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* BILLING VIEW */}
+        {/* BILLING VIEW (NEW) */}
         {activeView === 'billing' && userRole === 'ADMIN' && (
           <div className="flex flex-col h-full bg-[#0A101C]">
             <div className="h-20 flex items-center justify-between px-6 border-b border-white/5 shrink-0 bg-[#0F172A]/50">
