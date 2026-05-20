@@ -4,49 +4,22 @@ import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '../../lib/supabase'; 
 import { 
-  MessageSquare, ShieldCheck, X, Send, Clock, 
-  Trash2, Activity, MessageCircle, UserCheck, 
-  StickyNote, User, Download, ShoppingBag, Loader2,
-  LayoutDashboard, LayoutTemplate, BarChart2, Settings, 
-  TrendingUp, Search, Calendar, Plus, Star, Zap,
-  Copy, Check, CheckCheck, Edit2, Megaphone, Users, Target, PieChart, TrendingDown,
-  Key, Bell, Globe, Lock, Palette, LogOut, Eye, AlertTriangle, MousePointerClick, List,
-  UploadCloud, Shield, FileText, Link, Tag, ShieldAlert, Sparkles
+  MessageSquare, ShieldCheck, X, Send, Clock, Trash2, Activity, MessageCircle, UserCheck, 
+  StickyNote, User, Download, ShoppingBag, Loader2, LayoutDashboard, LayoutTemplate, 
+  BarChart2, Settings, TrendingUp, Search, Calendar, Plus, Star, Zap, Copy, Check, 
+  CheckCheck, Edit2, Megaphone, Users, Target, PieChart, TrendingDown, Bell, Globe, 
+  Lock, Palette, LogOut, Eye, AlertTriangle, MousePointerClick, List, UploadCloud, 
+  Shield, FileText, Link, Tag, ShieldAlert, Sparkles
 } from 'lucide-react';
 import { jsPDF } from "jspdf";
 
-// ─── ENTERPRISE WHITE-LABEL COLOR MAP ───
+// ─── STATIC CONFIGURATIONS ───
 const BRAND_COLORS = {
-  emerald: {
-    text: 'text-emerald-400', bg: 'bg-emerald-500', bgSubtle: 'bg-emerald-500/20',
-    border: 'border-emerald-500/30', borderActive: 'border-emerald-500/50', focusBorder: 'focus:border-emerald-500/50',
-    hoverBg: 'hover:bg-emerald-500/20', gradient: 'from-emerald-500 to-teal-500', hoverGradient: 'hover:from-emerald-400 hover:to-teal-400',
-    shadow: 'shadow-[0_0_15px_rgba(16,185,129,0.4)]'
-  },
-  blue: {
-    text: 'text-blue-400', bg: 'bg-blue-500', bgSubtle: 'bg-blue-500/20',
-    border: 'border-blue-500/30', borderActive: 'border-blue-500/50', focusBorder: 'focus:border-blue-500/50',
-    hoverBg: 'hover:bg-blue-500/20', gradient: 'from-blue-500 to-indigo-500', hoverGradient: 'hover:from-blue-400 hover:to-indigo-400',
-    shadow: 'shadow-[0_0_15px_rgba(59,130,246,0.4)]'
-  },
-  purple: {
-    text: 'text-purple-400', bg: 'bg-purple-500', bgSubtle: 'bg-purple-500/20',
-    border: 'border-purple-500/30', borderActive: 'border-purple-500/50', focusBorder: 'focus:border-purple-500/50',
-    hoverBg: 'hover:bg-purple-500/20', gradient: 'from-purple-500 to-fuchsia-500', hoverGradient: 'hover:from-purple-400 hover:to-fuchsia-400',
-    shadow: 'shadow-[0_0_15px_rgba(168,85,247,0.4)]'
-  },
-  rose: {
-    text: 'text-rose-400', bg: 'bg-rose-500', bgSubtle: 'bg-rose-500/20',
-    border: 'border-rose-500/30', borderActive: 'border-rose-500/50', focusBorder: 'focus:border-rose-500/50',
-    hoverBg: 'hover:bg-rose-500/20', gradient: 'from-rose-500 to-pink-500', hoverGradient: 'hover:from-rose-400 hover:to-pink-400',
-    shadow: 'shadow-[0_0_15px_rgba(244,63,94,0.4)]'
-  },
-  amber: {
-    text: 'text-amber-400', bg: 'bg-amber-500', bgSubtle: 'bg-amber-500/20',
-    border: 'border-amber-500/30', borderActive: 'border-amber-500/50', focusBorder: 'focus:border-amber-500/50',
-    hoverBg: 'hover:bg-amber-500/20', gradient: 'from-amber-500 to-orange-500', hoverGradient: 'hover:from-amber-400 hover:to-orange-400',
-    shadow: 'shadow-[0_0_15px_rgba(245,158,11,0.4)]'
-  }
+  emerald: { text: 'text-emerald-400', bg: 'bg-emerald-500', bgSubtle: 'bg-emerald-500/20', border: 'border-emerald-500/30', borderActive: 'border-emerald-500/50', focusBorder: 'focus:border-emerald-500/50', hoverBg: 'hover:bg-emerald-500/20', gradient: 'from-emerald-500 to-teal-500', hoverGradient: 'hover:from-emerald-400 hover:to-teal-400', shadow: 'shadow-[0_0_15px_rgba(16,185,129,0.4)]' },
+  blue: { text: 'text-blue-400', bg: 'bg-blue-500', bgSubtle: 'bg-blue-500/20', border: 'border-blue-500/30', borderActive: 'border-blue-500/50', focusBorder: 'focus:border-blue-500/50', hoverBg: 'hover:bg-blue-500/20', gradient: 'from-blue-500 to-indigo-500', hoverGradient: 'hover:from-blue-400 hover:to-indigo-400', shadow: 'shadow-[0_0_15px_rgba(59,130,246,0.4)]' },
+  purple: { text: 'text-purple-400', bg: 'bg-purple-500', bgSubtle: 'bg-purple-500/20', border: 'border-purple-500/30', borderActive: 'border-purple-500/50', focusBorder: 'focus:border-purple-500/50', hoverBg: 'hover:bg-purple-500/20', gradient: 'from-purple-500 to-fuchsia-500', hoverGradient: 'hover:from-purple-400 hover:to-fuchsia-400', shadow: 'shadow-[0_0_15px_rgba(168,85,247,0.4)]' },
+  rose: { text: 'text-rose-400', bg: 'bg-rose-500', bgSubtle: 'bg-rose-500/20', border: 'border-rose-500/30', borderActive: 'border-rose-500/50', focusBorder: 'focus:border-rose-500/50', hoverBg: 'hover:bg-rose-500/20', gradient: 'from-rose-500 to-pink-500', hoverGradient: 'hover:from-rose-400 hover:to-pink-400', shadow: 'shadow-[0_0_15px_rgba(244,63,94,0.4)]' },
+  amber: { text: 'text-amber-400', bg: 'bg-amber-500', bgSubtle: 'bg-amber-500/20', border: 'border-amber-500/30', borderActive: 'border-amber-500/50', focusBorder: 'focus:border-amber-500/50', hoverBg: 'hover:bg-amber-500/20', gradient: 'from-amber-500 to-orange-500', hoverGradient: 'hover:from-amber-400 hover:to-orange-400', shadow: 'shadow-[0_0_15px_rgba(245,158,11,0.4)]' }
 };
 
 const AVAILABLE_TAGS = [
@@ -56,6 +29,16 @@ const AVAILABLE_TAGS = [
   { id: 'urgent', label: 'Urgent', color: 'bg-orange-500/20 text-orange-400 border-orange-500/30' }
 ];
 
+const COLUMN_CONFIG: Record<string, { icon: any, hex: string, twText: string, twBg: string }> = {
+  'NEW_ORDER': { icon: ShoppingBag, hex: '#10b981', twText: 'text-emerald-400', twBg: 'bg-emerald-500' },
+  'HANDOFF': { icon: UserCheck, hex: '#eab308', twText: 'text-yellow-400', twBg: 'bg-yellow-500' },
+  'ACTIVE': { icon: Activity, hex: '#0ea5e9', twText: 'text-sky-400', twBg: 'bg-sky-500' },
+  'RESOLVED': { icon: ShieldCheck, hex: '#84cc16', twText: 'text-lime-400', twBg: 'bg-lime-500' }
+};
+
+const COLUMNS = Object.keys(COLUMN_CONFIG);
+
+// ─── BACKGROUND COMPONENTS ───
 function AnimatedStarfield() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
@@ -85,29 +68,12 @@ function AnimatedStarfield() {
   return <canvas ref={canvasRef} className="fixed inset-0 -z-20 pointer-events-none opacity-40" />;
 }
 
-function NebulaBackground() {
-  return (
-    <div className="fixed inset-0 -z-30 pointer-events-none overflow-hidden">
-      <div className="absolute top-[-20%] left-[-10%] w-[60vw] h-[60vw] rounded-full bg-blue-500/15 blur-[150px] animate-[pulse-slow_15s_ease-in-out_infinite_alternate]" />
-      <div className="absolute bottom-[-20%] right-[-10%] w-[50vw] h-[50vw] rounded-full bg-emerald-500/10 blur-[150px] animate-[pulse-slow_20s_ease-in-out_infinite_alternate-reverse]" />
-    </div>
-  );
-}
-
-const COLUMN_CONFIG: Record<string, { icon: any, hex: string, twText: string, twBg: string }> = {
-  'NEW_ORDER': { icon: ShoppingBag, hex: '#10b981', twText: 'text-emerald-400', twBg: 'bg-emerald-500' },
-  'HANDOFF': { icon: UserCheck, hex: '#eab308', twText: 'text-yellow-400', twBg: 'bg-yellow-500' },
-  'ACTIVE': { icon: Activity, hex: '#0ea5e9', twText: 'text-sky-400', twBg: 'bg-sky-500' },
-  'RESOLVED': { icon: ShieldCheck, hex: '#84cc16', twText: 'text-lime-400', twBg: 'bg-lime-500' }
-};
-
-const COLUMNS = Object.keys(COLUMN_CONFIG);
-
 export default function Dashboard() {
   const router = useRouter();
   const [isMounted, setIsMounted] = useState(false);
   const [activeView, setActiveView] = useState<'dashboard' | 'conversations' | 'templates' | 'campaigns' | 'analytics' | 'settings'>('dashboard');
 
+  // ─── STATE ───
   const [userRole, setUserRole] = useState<'ADMIN' | 'AGENT'>('ADMIN');
   const [globalSearch, setGlobalSearch] = useState('');
   const [leads, setLeads] = useState<any[]>([]);
@@ -125,8 +91,7 @@ export default function Dashboard() {
 
   const [settings, setSettings] = useState({
     metaToken: '', metaPhoneId: '', shopifyDomain: '', adminName: 'Nasir Ahmed', adminEmail: 'admin@chatrax.com',
-    audioAlerts: true, desktopNotifications: false, outboundWebhookUrl: '',
-    workspaceName: 'ChatRax Pro', accentColor: 'emerald'
+    audioAlerts: true, desktopNotifications: false, outboundWebhookUrl: '', workspaceName: 'ChatRax Pro', accentColor: 'emerald'
   });
 
   const [quickReplies, setQuickReplies] = useState<{id: string, shortcut: string, content: string}[]>([]);
@@ -151,35 +116,14 @@ export default function Dashboard() {
   const [isUploadingCSV, setIsUploadingCSV] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // ─── DATA FETCHING FUNCTIONS ───
-  const fetchLeads = async () => {
-    const { data } = await supabase.from('customers').select('*').order('created_at', { ascending: false });
-    if (data) setLeads(data);
-  };
+  // ─── CORE FUNCTIONS ───
+  const fetchLeads = async () => { const { data } = await supabase.from('customers').select('*').order('created_at', { ascending: false }); if (data) setLeads(data); };
+  const fetchStats = async () => { const { count: outCount } = await supabase.from('messages').select('*', { count: 'exact', head: true }).eq('is_outbound', true); setTotalSent(outCount || 0); const { count: inCount } = await supabase.from('messages').select('*', { count: 'exact', head: true }).eq('is_outbound', false).eq('is_internal', false); setTotalReceived(inCount || 0); };
+  const fetchQuickReplies = async () => { const { data } = await supabase.from('quick_replies').select('*').order('created_at', { ascending: false }); if (data) setQuickReplies(data); };
+  const fetchAuditLogs = async () => { const { data } = await supabase.from('audit_logs').select('*').order('created_at', { ascending: false }).limit(20); if (data) setAuditLogs(data); };
+  const logAudit = async (actionType: string, details: string) => { try { await supabase.from('audit_logs').insert({ agent_name: settings.adminName || 'System', action_type: actionType, details: details }); fetchAuditLogs(); } catch (err) {} };
 
-  const fetchStats = async () => {
-    const { count: outCount } = await supabase.from('messages').select('*', { count: 'exact', head: true }).eq('is_outbound', true); setTotalSent(outCount || 0);
-    const { count: inCount } = await supabase.from('messages').select('*', { count: 'exact', head: true }).eq('is_outbound', false).eq('is_internal', false); setTotalReceived(inCount || 0);
-  };
-
-  const fetchQuickReplies = async () => {
-    const { data } = await supabase.from('quick_replies').select('*').order('created_at', { ascending: false });
-    if (data) setQuickReplies(data);
-  };
-
-  const fetchAuditLogs = async () => {
-    const { data } = await supabase.from('audit_logs').select('*').order('created_at', { ascending: false }).limit(20);
-    if (data) setAuditLogs(data);
-  };
-
-  const logAudit = async (actionType: string, details: string) => {
-    try {
-      await supabase.from('audit_logs').insert({ agent_name: settings.adminName || 'System', action_type: actionType, details: details });
-      fetchAuditLogs();
-    } catch (err) {}
-  };
-
-  // ─── EFFECTS & INITIALIZATION ───
+  // ─── INITIALIZATION EFFECTS ───
   useEffect(() => {
     const checkAuth = async () => {
       const { data: { session } } = await supabase.auth.getSession();
@@ -255,48 +199,24 @@ export default function Dashboard() {
     return () => { supabase.removeChannel(channel); };
   }, []);
 
-  // ─── APP HANDLERS ───
-  const handleThemeChange = (newTheme: string) => { setTheme(newTheme); localStorage.setItem('chatrax_theme', newTheme); };
-  
-  const updateBranding = (name: string, color: string) => {
-    setSettings(prev => ({ ...prev, workspaceName: name, accentColor: color }));
-    localStorage.setItem('chatrax_branding', JSON.stringify({ name, color }));
-  };
-
-  const handleLogOut = async () => {
-    if (!window.confirm("Are you sure you want to end your session?")) return;
-    try { await supabase.auth.signOut(); router.push('/login'); } catch (err) { router.push('/login'); }
-  };
+  // ─── EVENT HANDLERS ───
+  const updateBranding = (name: string, color: string) => { setSettings(prev => ({ ...prev, workspaceName: name, accentColor: color })); localStorage.setItem('chatrax_branding', JSON.stringify({ name, color })); };
+  const handleLogOut = async () => { if (!window.confirm("Are you sure you want to end your session?")) return; try { await supabase.auth.signOut(); router.push('/login'); } catch (err) { router.push('/login'); } };
+  const toggleRole = () => { const newRole = userRole === 'ADMIN' ? 'AGENT' : 'ADMIN'; setUserRole(newRole); if (newRole === 'AGENT' && activeView !== 'conversations' && activeView !== 'templates') { setActiveView('conversations'); } };
 
   const fireOutboundWebhook = async (leadData: any) => {
     if (!settings.outboundWebhookUrl) return;
-    try {
-      await fetch('/api/webhook/outbound', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ targetUrl: settings.outboundWebhookUrl, payload: { event: 'LEAD_RESOLVED', lead: { id: leadData.id, phone: leadData.phone_number, name: leadData.full_name, email: leadData.email || '', resolved_at: new Date().toISOString() } } }) });
-      logAudit('WEBHOOK_FIRED', `Successfully pushed resolved lead +${leadData.phone_number} to external automation.`);
-    } catch (err) { logAudit('WEBHOOK_FAILED', `Failed to push lead +${leadData.phone_number} to external automation.`); }
+    try { await fetch('/api/webhook/outbound', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ targetUrl: settings.outboundWebhookUrl, payload: { event: 'LEAD_RESOLVED', lead: { id: leadData.id, phone: leadData.phone_number, name: leadData.full_name, email: leadData.email || '', resolved_at: new Date().toISOString() } } }) }); logAudit('WEBHOOK_FIRED', `Successfully pushed resolved lead +${leadData.phone_number} to external automation.`); } catch (err) { logAudit('WEBHOOK_FAILED', `Failed to push lead +${leadData.phone_number} to external automation.`); }
   };
 
   const handleCSVUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if (!file) return; setIsUploadingCSV(true); const reader = new FileReader();
     reader.onload = async (event) => {
-      try {
-        const text = event.target?.result as string; const rows = text.split('\n'); const newLeads = [];
-        for (let i = 1; i < rows.length; i++) {
-          const cols = rows[i].split(',');
-          if (cols.length >= 1 && cols[0].trim()) {
-            let phone = cols[0].replace(/\D/g, ''); 
-            if (phone) newLeads.push({ phone_number: phone, full_name: cols[1]?.trim() || 'Imported Contact', status: 'ACTIVE', last_message: 'System Migration' });
-          }
-        }
-        if (newLeads.length > 0) {
-          const { error } = await supabase.from('customers').insert(newLeads);
-          if (!error) { alert(`✅ Migration Complete! Imported ${newLeads.length} leads.`); logAudit('SYSTEM_MIGRATION', `Admin imported ${newLeads.length} leads via CSV.`); fetchLeads(); } 
-          else { alert("Database Error: Check console."); console.error(error); }
-        } else { alert("No valid phone numbers found in the CSV."); }
-      } catch (err) { alert("Failed to parse CSV file."); }
-      setIsUploadingCSV(false); e.target.value = ''; 
-    };
-    reader.readAsText(file);
+      try { const text = event.target?.result as string; const rows = text.split('\n'); const newLeads = [];
+        for (let i = 1; i < rows.length; i++) { const cols = rows[i].split(','); if (cols.length >= 1 && cols[0].trim()) { let phone = cols[0].replace(/\D/g, ''); if (phone) newLeads.push({ phone_number: phone, full_name: cols[1]?.trim() || 'Imported Contact', status: 'ACTIVE', last_message: 'System Migration' }); } }
+        if (newLeads.length > 0) { const { error } = await supabase.from('customers').insert(newLeads); if (!error) { alert(`✅ Migration Complete! Imported ${newLeads.length} leads.`); logAudit('SYSTEM_MIGRATION', `Admin imported ${newLeads.length} leads via CSV.`); fetchLeads(); } else { alert("Database Error: Check console."); } } else { alert("No valid phone numbers found in the CSV."); }
+      } catch (err) { alert("Failed to parse CSV file."); } setIsUploadingCSV(false); e.target.value = ''; 
+    }; reader.readAsText(file);
   };
 
   useEffect(() => {
@@ -305,121 +225,59 @@ export default function Dashboard() {
     const fetchChatHistory = async () => { const { data } = await supabase.from('messages').select('*').eq('customer_id', selectedLead.id).order('created_at', { ascending: true }); if (data) setMessages(data); }; fetchChatHistory();
     const fetchShopifyData = async () => {
       setLoadingShopify(true);
-      try {
-        const response = await fetch(`/api/shopify/customer?phone=${encodeURIComponent(selectedLead.phone_number)}`);
-        const contentType = response.headers.get("content-type");
-        if (!response.ok || !contentType || !contentType.includes("application/json")) { setShopifyData(null); setLoadingShopify(false); return; }
-        const data = await response.json(); setShopifyData(data);
-      } catch (err) { setShopifyData(null); }
-      setLoadingShopify(false);
+      try { const response = await fetch(`/api/shopify/customer?phone=${encodeURIComponent(selectedLead.phone_number)}`); const contentType = response.headers.get("content-type"); if (!response.ok || !contentType || !contentType.includes("application/json")) { setShopifyData(null); setLoadingShopify(false); return; } const data = await response.json(); setShopifyData(data); } catch (err) { setShopifyData(null); } setLoadingShopify(false);
     };
     if (selectedLead.phone_number) fetchShopifyData();
-
-    const msgChannel = supabase.channel('realtime-messages')
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages' }, (payload: any) => { if (payload.new.customer_id === selectedLead.id) { setMessages(prev => prev.map(m => m.id === payload.new.id ? payload.new : m)); } })
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload: any) => {
-        if (payload.new.customer_id === selectedLead.id) setMessages((prev) => [...prev, payload.new]);
-        if (payload.new.is_outbound) setTotalSent(prev => prev + 1); else if (!payload.new.is_internal) setTotalReceived(prev => prev + 1);
-      }).subscribe();
+    const msgChannel = supabase.channel('realtime-messages').on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages' }, (payload: any) => { if (payload.new.customer_id === selectedLead.id) { setMessages(prev => prev.map(m => m.id === payload.new.id ? payload.new : m)); } }).on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload: any) => { if (payload.new.customer_id === selectedLead.id) setMessages((prev) => [...prev, payload.new]); if (payload.new.is_outbound) setTotalSent(prev => prev + 1); else if (!payload.new.is_internal) setTotalReceived(prev => prev + 1); }).subscribe();
     return () => { supabase.removeChannel(msgChannel); };
   }, [selectedLead?.id]);
 
   const handleUpdateProfile = async () => { await supabase.from('customers').update({ full_name: editProfile.full_name, email: editProfile.email, profile_notes: editProfile.profile_notes }).eq('id', selectedLead.id); fetchLeads(); };
-  const toggleRole = () => { const newRole = userRole === 'ADMIN' ? 'AGENT' : 'ADMIN'; setUserRole(newRole); if (newRole === 'AGENT' && activeView !== 'conversations' && activeView !== 'templates') { setActiveView('conversations'); } };
-
+  
   const handleToggleTag = async (tagId: string) => {
-    if (!selectedLead || userRole !== 'ADMIN') return; 
-    let newTags = [...(selectedLead.tags || [])];
-    if (newTags.includes(tagId)) newTags = newTags.filter(t => t !== tagId); else newTags.push(tagId);
-    setSelectedLead({ ...selectedLead, tags: newTags }); setLeads(prev => prev.map(l => l.id === selectedLead.id ? { ...l, tags: newTags } : l));
-    try { await supabase.from('customers').update({ tags: newTags }).eq('id', selectedLead.id); logAudit('TAG_UPDATE', `Admin updated tags for +${selectedLead.phone_number}`); } catch (err) {}
+    if (!selectedLead || userRole !== 'ADMIN') return; let newTags = [...(selectedLead.tags || [])]; if (newTags.includes(tagId)) newTags = newTags.filter(t => t !== tagId); else newTags.push(tagId); setSelectedLead({ ...selectedLead, tags: newTags }); setLeads(prev => prev.map(l => l.id === selectedLead.id ? { ...l, tags: newTags } : l)); try { await supabase.from('customers').update({ tags: newTags }).eq('id', selectedLead.id); logAudit('TAG_UPDATE', `Admin updated tags for +${selectedLead.phone_number}`); } catch (err) {}
   };
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setNewMessage(e.target.value);
-    const lastWord = e.target.value.split(' ').pop() || '';
-    if (lastWord.startsWith('/')) { setShowCommandMenu(true); setCommandQuery(lastWord.substring(1).toLowerCase()); } else { setShowCommandMenu(false); }
-  };
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => { setNewMessage(e.target.value); const lastWord = e.target.value.split(' ').pop() || ''; if (lastWord.startsWith('/')) { setShowCommandMenu(true); setCommandQuery(lastWord.substring(1).toLowerCase()); } else { setShowCommandMenu(false); } };
   const insertQuickReply = (content: string) => { const words = newMessage.split(' '); words.pop(); setNewMessage((words.join(' ') + (words.length > 0 ? ' ' : '') + content + ' ').trimStart()); setShowCommandMenu(false); };
 
   const handleSendMessage = async (e: React.FormEvent) => {
-    e.preventDefault(); if (!newMessage.trim() || !selectedLead) return;
-    const content = newMessage; const internalStatus = isInternal; setNewMessage(''); setIsInternal(false); setShowCommandMenu(false);
-    try {
-      await supabase.from('messages').insert({ customer_id: selectedLead.id, content, is_outbound: true, is_internal: internalStatus, status: 'sent' });
-      if (selectedLead.status === 'NEW_ORDER') {
-        await supabase.from('customers').update({ status: 'ACTIVE' }).eq('id', selectedLead.id);
-        setLeads(prev => prev.map(l => l.id === selectedLead.id ? { ...l, status: 'ACTIVE' } : l)); setSelectedLead((prev: any) => prev ? { ...prev, status: 'ACTIVE' } : null);
-      }
-      if (!internalStatus) await fetch('/api/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to: selectedLead.phone_number, message: content }) });
-    } catch (err) {}
+    e.preventDefault(); if (!newMessage.trim() || !selectedLead) return; const content = newMessage; const internalStatus = isInternal; setNewMessage(''); setIsInternal(false); setShowCommandMenu(false);
+    try { await supabase.from('messages').insert({ customer_id: selectedLead.id, content, is_outbound: true, is_internal: internalStatus, status: 'sent' }); if (selectedLead.status === 'NEW_ORDER') { await supabase.from('customers').update({ status: 'ACTIVE' }).eq('id', selectedLead.id); setLeads(prev => prev.map(l => l.id === selectedLead.id ? { ...l, status: 'ACTIVE' } : l)); setSelectedLead((prev: any) => prev ? { ...prev, status: 'ACTIVE' } : null); } if (!internalStatus) await fetch('/api/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to: selectedLead.phone_number, message: content }) }); } catch (err) {}
   };
 
   const handleSendInteractive = async (type: 'button' | 'list') => {
-    if (!selectedLead) return;
-    let interactivePayload; let displayMessage = "";
-    if (type === 'button') {
-      displayMessage = "🔘 [Sent Quick Reply Buttons]";
-      interactivePayload = { type: "button", body: { text: "Hi! How can we assist you today?" }, action: { buttons: [ { type: "reply", reply: { id: "btn_sales", title: "Sales" } }, { type: "reply", reply: { id: "btn_support", title: "Support" } } ] } };
-    } else {
-      displayMessage = "📋 [Sent Interactive Menu List]";
-      interactivePayload = { type: "list", header: { type: "text", text: "Main Menu" }, body: { text: "Please select an option from the menu below so we can route you correctly:" }, footer: { text: "ChatRax Pro Auto-Menu" }, action: { button: "View Options", sections: [ { title: "Order Help", rows: [ { id: "row_track", title: "Track Order", description: "Check your delivery status" }, { id: "row_return", title: "Returns", description: "Start a return process" } ] } ] } };
-    }
-    try {
-      await supabase.from('messages').insert({ customer_id: selectedLead.id, content: displayMessage, is_outbound: true, is_internal: false, status: 'sent' });
-      if (selectedLead.status === 'NEW_ORDER') {
-        await supabase.from('customers').update({ status: 'ACTIVE' }).eq('id', selectedLead.id);
-        setLeads(prev => prev.map(l => l.id === selectedLead.id ? { ...l, status: 'ACTIVE' } : l)); setSelectedLead((prev: any) => prev ? { ...prev, status: 'ACTIVE' } : null);
-      }
-      await fetch('/api/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to: selectedLead.phone_number, type: 'interactive', interactive: interactivePayload }) });
-    } catch (err) {}
+    if (!selectedLead) return; let interactivePayload; let displayMessage = "";
+    if (type === 'button') { displayMessage = "🔘 [Sent Quick Reply Buttons]"; interactivePayload = { type: "button", body: { text: "Hi! How can we assist you today?" }, action: { buttons: [ { type: "reply", reply: { id: "btn_sales", title: "Sales" } }, { type: "reply", reply: { id: "btn_support", title: "Support" } } ] } }; } else { displayMessage = "📋 [Sent Interactive Menu List]"; interactivePayload = { type: "list", header: { type: "text", text: "Main Menu" }, body: { text: "Please select an option from the menu below so we can route you correctly:" }, footer: { text: "ChatRax Pro Auto-Menu" }, action: { button: "View Options", sections: [ { title: "Order Help", rows: [ { id: "row_track", title: "Track Order", description: "Check your delivery status" }, { id: "row_return", title: "Returns", description: "Start a return process" } ] } ] } }; }
+    try { await supabase.from('messages').insert({ customer_id: selectedLead.id, content: displayMessage, is_outbound: true, is_internal: false, status: 'sent' }); if (selectedLead.status === 'NEW_ORDER') { await supabase.from('customers').update({ status: 'ACTIVE' }).eq('id', selectedLead.id); setLeads(prev => prev.map(l => l.id === selectedLead.id ? { ...l, status: 'ACTIVE' } : l)); setSelectedLead((prev: any) => prev ? { ...prev, status: 'ACTIVE' } : null); } await fetch('/api/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to: selectedLead.phone_number, type: 'interactive', interactive: interactivePayload }) }); } catch (err) {}
   };
 
   const renderMessageContent = (content: string) => {
-    if (content.startsWith('MEDIA::')) {
-      const parts = content.split('::'); const type = parts[1]; const mediaId = parts[2];
-      if (type === 'image') return (<div className="mt-1"><img src={`/api/media?id=${mediaId}`} alt="Customer Upload" className="max-w-[180px] rounded-lg shadow-sm border border-white/10" /></div>);
-      if (type === 'audio') return (<div className="mt-1"><audio controls className="max-w-[200px] h-8 rounded-full shadow-sm"><source src={`/api/media?id=${mediaId}`} type="audio/ogg" />Your browser does not support the audio element.</audio></div>);
-      if (type === 'video') return (<div className="mt-1"><video controls className="max-w-[200px] rounded-lg shadow-sm border border-white/10"><source src={`/api/media?id=${mediaId}`} /></video></div>);
-    }
+    if (content.startsWith('MEDIA::')) { const parts = content.split('::'); const type = parts[1]; const mediaId = parts[2]; if (type === 'image') return (<div className="mt-1"><img src={`/api/media?id=${mediaId}`} alt="Customer Upload" className="max-w-[180px] rounded-lg shadow-sm border border-white/10" /></div>); if (type === 'audio') return (<div className="mt-1"><audio controls className="max-w-[200px] h-8 rounded-full shadow-sm"><source src={`/api/media?id=${mediaId}`} type="audio/ogg" />Your browser does not support the audio element.</audio></div>); if (type === 'video') return (<div className="mt-1"><video controls className="max-w-[200px] rounded-lg shadow-sm border border-white/10"><source src={`/api/media?id=${mediaId}`} /></video></div>); }
     return content;
   };
 
-  const handleAddTemplate = async (e: React.FormEvent) => {
-    e.preventDefault(); if (!newShortcut.trim() || !newTemplateContent.trim()) return;
-    try {
-      const cleanShortcut = newShortcut.replace('/', '').trim().toLowerCase();
-      const { data, error } = await supabase.from('quick_replies').insert([{ shortcut: cleanShortcut, content: newTemplateContent.trim() }]).select();
-      if (!error && data) { setQuickReplies([data[0], ...quickReplies]); setNewShortcut(''); setNewTemplateContent(''); }
-    } catch (err) {}
-  };
-
+  const handleAddTemplate = async (e: React.FormEvent) => { e.preventDefault(); if (!newShortcut.trim() || !newTemplateContent.trim()) return; try { const cleanShortcut = newShortcut.replace('/', '').trim().toLowerCase(); const { data, error } = await supabase.from('quick_replies').insert([{ shortcut: cleanShortcut, content: newTemplateContent.trim() }]).select(); if (!error && data) { setQuickReplies([data[0], ...quickReplies]); setNewShortcut(''); setNewTemplateContent(''); } } catch (err) {} };
   const handleDeleteTemplate = async (id: string) => { if (!window.confirm("Delete this template permanently?")) return; try { await supabase.from('quick_replies').delete().eq('id', id); setQuickReplies(quickReplies.filter(q => q.id !== id)); } catch (err) {} };
   const handleCopyTemplate = (id: string, content: string) => { navigator.clipboard.writeText(content); setCopiedId(id); setTimeout(() => setCopiedId(null), 2000); };
   const startEditingTemplate = (template: {id: string, shortcut: string, content: string}) => { setEditingTemplateId(template.id); setEditShortcut(template.shortcut); setEditTemplateContent(template.content); };
   const cancelEditingTemplate = () => { setEditingTemplateId(null); setEditShortcut(''); setEditTemplateContent(''); };
-  const handleUpdateTemplate = async (id: string) => {
-    if (!editShortcut.trim() || !editTemplateContent.trim()) return;
-    try {
-      const cleanShortcut = editShortcut.replace('/', '').trim().toLowerCase();
-      const { error } = await supabase.from('quick_replies').update({ shortcut: cleanShortcut, content: editTemplateContent.trim() }).eq('id', id);
-      if (!error) { setQuickReplies(prev => prev.map(q => q.id === id ? { ...q, shortcut: cleanShortcut, content: editTemplateContent.trim() } : q)); setEditingTemplateId(null); }
-    } catch (err) {}
-  };
+  const handleUpdateTemplate = async (id: string) => { if (!editShortcut.trim() || !editTemplateContent.trim()) return; try { const cleanShortcut = editShortcut.replace('/', '').trim().toLowerCase(); const { error } = await supabase.from('quick_replies').update({ shortcut: cleanShortcut, content: editTemplateContent.trim() }).eq('id', id); if (!error) { setQuickReplies(prev => prev.map(q => q.id === id ? { ...q, shortcut: cleanShortcut, content: editTemplateContent.trim() } : q)); setEditingTemplateId(null); } } catch (err) {} };
 
   const handleDeleteMemo = async (memoId: string) => { try { await supabase.from('messages').delete().eq('id', memoId); setMessages(prev => prev.filter(m => m.id !== memoId)); } catch (err) {} };
   const handleDeleteMessage = async (msgId: string) => { if (!window.confirm("Delete this message from the system?")) return; try { await supabase.from('messages').delete().eq('id', msgId); setMessages(prev => prev.filter(m => m.id !== msgId)); } catch (err) {} };
-  const handleDeleteLead = async (e: React.MouseEvent, id: string, name: string) => {
-    e.stopPropagation(); if (userRole !== 'ADMIN') { alert("Only Admins can delete conversations."); return; }
-    if (!window.confirm('Are you sure you want to completely delete this lead and their conversation?')) return;
-    try { await supabase.from('customers').delete().eq('id', id); logAudit('DELETE_LEAD', `Deleted entire lead record for: ${name}`); setLeads(prev => prev.filter(l => l.id !== id)); if (selectedLead?.id === id) setSelectedLead(null); } catch (err) {}
-  };
+  const handleDeleteLead = async (e: React.MouseEvent, id: string, name: string) => { e.stopPropagation(); if (userRole !== 'ADMIN') { alert("Only Admins can delete conversations."); return; } if (!window.confirm('Are you sure you want to completely delete this lead and their conversation?')) return; try { await supabase.from('customers').delete().eq('id', id); logAudit('DELETE_LEAD', `Deleted entire lead record for: ${name}`); setLeads(prev => prev.filter(l => l.id !== id)); if (selectedLead?.id === id) setSelectedLead(null); } catch (err) {} };
   const toggleStar = (e: React.MouseEvent, id: string) => { e.stopPropagation(); setStarredLeads(prev => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; }); };
-  const handleDragStart = (e: React.DragEvent, id: string) => { setDraggedLead(id); };
+  const handleDragStart = (e: React.DragEvent, id: string) => { setDraggedLead(id); e.dataTransfer.setData('text/plain', id); };
   const handleDragOver = (e: React.DragEvent) => e.preventDefault();
+  
   const handleDrop = async (e: React.DragEvent, newStatus: string) => {
-    e.preventDefault(); if (!draggedLead) return; const currentDraggedId = draggedLead; const lead = leads.find(l => l.id === currentDraggedId);
-    setLeads(prevLeads => prevLeads.map(lead => lead.id === currentDraggedId ? { ...lead, status: newStatus } : lead)); setDraggedLead(null);
+    e.preventDefault(); 
+    const currentDraggedId = draggedLead || e.dataTransfer.getData('text/plain');
+    if (!currentDraggedId) return;
+    const lead = leads.find(l => l.id === currentDraggedId);
+    setLeads(prevLeads => prevLeads.map(l => l.id === currentDraggedId ? { ...l, status: newStatus } : l)); 
+    setDraggedLead(null);
     try {
       const { error } = await supabase.from('customers').update({ status: newStatus }).eq('id', currentDraggedId);
       if (!error && lead) { logAudit('MOVE_LEAD', `Moved lead +${lead.phone_number} to ${newStatus}`); if (newStatus === 'RESOLVED' && settings.outboundWebhookUrl) fireOutboundWebhook(lead); }
@@ -428,40 +286,23 @@ export default function Dashboard() {
   };
 
   const handleTakeOver = async (id: string, phone: string) => { await supabase.from('customers').update({ status: 'ACTIVE' }).eq('id', id); logAudit('TAKEOVER', `Agent took over inbound lead: +${phone}`); };
-  const handleResolveChat = async (id: string, phone: string) => { 
-    await supabase.from('customers').update({ status: 'RESOLVED' }).eq('id', id); logAudit('RESOLVE_LEAD', `Agent resolved lead: +${phone}`);
-    if (settings.outboundWebhookUrl && selectedLead) fireOutboundWebhook(selectedLead); setSelectedLead(null); 
-  };
+  const handleResolveChat = async (id: string, phone: string) => { await supabase.from('customers').update({ status: 'RESOLVED' }).eq('id', id); logAudit('RESOLVE_LEAD', `Agent resolved lead: +${phone}`); if (settings.outboundWebhookUrl && selectedLead) fireOutboundWebhook(selectedLead); setSelectedLead(null); };
+  
   const handleExportPDF = () => {
     if (!selectedLead || userRole !== 'ADMIN') return; logAudit('EXPORT_PDF', `Admin downloaded PDF intelligence report for +${selectedLead.phone_number}`);
     const doc = new jsPDF(); const name = selectedLead.full_name || selectedLead.phone_number;
-    doc.setFontSize(20); doc.setTextColor(6, 182, 212); doc.text(`${settings.workspaceName} Intelligence Report`, 20, 20);
-    doc.setFontSize(10); doc.setTextColor(100); doc.text(`Subject: ${name}`, 20, 30); doc.text(`Generated: ${new Date().toLocaleString()}`, 20, 35); doc.line(20, 40, 190, 40);
-    doc.setFontSize(12); doc.setTextColor(0); doc.text("Identity Profile", 20, 50);
-    doc.setFontSize(10); doc.text(`Full Name: ${selectedLead.full_name || 'N/A'}`, 20, 60); doc.text(`Phone: ${selectedLead.phone_number}`, 20, 65); doc.text(`Email Hash: ${selectedLead.email || 'N/A'}`, 20, 70); doc.text("Notes:", 20, 80);
-    const splitNotes = doc.splitTextToSize(selectedLead.profile_notes || "No notes provided.", 160); doc.text(splitNotes, 20, 85);
-    let yPos = 110; doc.setFontSize(12); doc.text("Communication Log", 20, yPos); yPos += 10;
-    messages.forEach((msg) => {
-      if (yPos > 270) { doc.addPage(); yPos = 20; }
-      const type = msg.is_internal ? "[INTERNAL MEMO]" : (msg.is_outbound ? "[AGENT]" : "[CUSTOMER]");
-      doc.setFontSize(8); doc.setTextColor(150); doc.text(`${new Date(msg.created_at).toLocaleString()} - ${type}`, 20, yPos); yPos += 5;
-      doc.setFontSize(10); doc.setTextColor(msg.is_internal ? 180 : 0); 
-      const splitMsg = doc.splitTextToSize(msg.content, 160); doc.text(splitMsg, 20, yPos); yPos += (splitMsg.length * 5) + 5;
-    });
+    doc.setFontSize(20); doc.setTextColor(6, 182, 212); doc.text(`${settings.workspaceName} Intelligence Report`, 20, 20); doc.setFontSize(10); doc.setTextColor(100); doc.text(`Subject: ${name}`, 20, 30); doc.text(`Generated: ${new Date().toLocaleString()}`, 20, 35); doc.line(20, 40, 190, 40); doc.setFontSize(12); doc.setTextColor(0); doc.text("Identity Profile", 20, 50); doc.setFontSize(10); doc.text(`Full Name: ${selectedLead.full_name || 'N/A'}`, 20, 60); doc.text(`Phone: ${selectedLead.phone_number}`, 20, 65); doc.text(`Email Hash: ${selectedLead.email || 'N/A'}`, 20, 70); doc.text("Notes:", 20, 80);
+    const splitNotes = doc.splitTextToSize(selectedLead.profile_notes || "No notes provided.", 160); doc.text(splitNotes, 20, 85); let yPos = 110; doc.setFontSize(12); doc.text("Communication Log", 20, yPos); yPos += 10;
+    messages.forEach((msg) => { if (yPos > 270) { doc.addPage(); yPos = 20; } const type = msg.is_internal ? "[INTERNAL MEMO]" : (msg.is_outbound ? "[AGENT]" : "[CUSTOMER]"); doc.setFontSize(8); doc.setTextColor(150); doc.text(`${new Date(msg.created_at).toLocaleString()} - ${type}`, 20, yPos); yPos += 5; doc.setFontSize(10); doc.setTextColor(msg.is_internal ? 180 : 0); const splitMsg = doc.splitTextToSize(msg.content, 160); doc.text(splitMsg, 20, yPos); yPos += (splitMsg.length * 5) + 5; });
     doc.save(`${settings.workspaceName.replace(/\s+/g, '_')}_Report_${name.replace(/\s+/g, '_')}.pdf`);
   };
 
   const handleLaunchCampaign = async (e: React.FormEvent) => {
-    e.preventDefault(); if (!campaignName || !campaignTemplateId) { alert("Please fill in all campaign details."); return; }
-    if (!window.confirm(`Are you sure you want to blast this to your ${campaignAudience} audience?`)) return;
-    try {
-      const response = await fetch('/api/campaign', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ campaignName, audience: campaignAudience, templateId: campaignTemplateId }) });
-      const data = await response.json();
-      if (data.success) { alert(`🚀 Broadcast Complete! Sent to ${data.broadcasted} customers.`); logAudit('LAUNCH_CAMPAIGN', `Launched broadcast '${campaignName}' to ${data.broadcasted} leads.`); setCampaignName(''); setCampaignTemplateId(''); } 
-      else { alert(`Error: ${data.error}`); }
-    } catch (err) { alert("Failed to launch campaign."); }
+    e.preventDefault(); if (!campaignName || !campaignTemplateId) { alert("Please fill in all campaign details."); return; } if (!window.confirm(`Are you sure you want to blast this to your ${campaignAudience} audience?`)) return;
+    try { const response = await fetch('/api/campaign', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ campaignName, audience: campaignAudience, templateId: campaignTemplateId }) }); const data = await response.json(); if (data.success) { alert(`🚀 Broadcast Complete! Sent to ${data.broadcasted} customers.`); logAudit('LAUNCH_CAMPAIGN', `Launched broadcast '${campaignName}' to ${data.broadcasted} leads.`); setCampaignName(''); setCampaignTemplateId(''); } else { alert(`Error: ${data.error}`); } } catch (err) { alert("Failed to launch campaign."); }
   };
 
+  // ─── RENDER COMPUTATIONS ───
   const chatMessages = messages.filter(m => !m.is_internal);
   const internalMemos = messages.filter(m => m.is_internal);
   const searchedLeads = leads.filter(l => {
@@ -483,56 +324,47 @@ export default function Dashboard() {
   const resolvedPct = leads.length ? Math.round((leads.filter(l => l.status === 'RESOLVED').length / totalLeads) * 100) : 0;
   const resolutionRate = leads.length > 0 ? Math.round((leads.filter(l => l.status === 'RESOLVED').length / leads.length) * 100) : 0;
 
-  // CRASH SAFE: Resolve Brand Theme
   const safeWorkspaceName = settings.workspaceName || 'ChatRax Pro';
   const activeTheme = BRAND_COLORS[settings.accentColor as keyof typeof BRAND_COLORS] || BRAND_COLORS.emerald;
   const brandNameParts = safeWorkspaceName.split(' ');
   const brandLastName = brandNameParts.length > 1 ? brandNameParts.pop() : '';
   const brandFirstName = brandNameParts.join(' ') || safeWorkspaceName;
 
+  // ─── MAIN LAYOUT ───
   return (
-    <div className={`flex h-screen text-zinc-100 font-sans relative overflow-hidden selection:bg-white/20 ${theme === 'grey' ? 'theme-grey' : theme === 'black' ? 'theme-black' : ''}`}>
+    <div className={`flex h-screen w-screen text-zinc-100 font-sans relative overflow-hidden selection:bg-white/20 ${theme === 'grey' ? 'theme-grey' : theme === 'black' ? 'theme-black' : ''}`}>
       
-      {theme === 'nebula' && <div className="fixed inset-0 -z-50 bg-gradient-to-br from-[#0F172A] via-[#1E293B] to-[#0F172A]" />}
+      {/* Backgrounds */}
+      {theme === 'nebula' && <div className="fixed inset-0 -z-50 bg-[#0F172A]" />}
       {theme === 'grey' && <div className="fixed inset-0 -z-50 bg-[#1e1e24]" />}
       {theme === 'black' && <div className="fixed inset-0 -z-50 bg-black" />}
+      <AnimatedStarfield />
 
       <style dangerouslySetInnerHTML={{__html: `
         @keyframes led-breathe { 0%, 100% { box-shadow: 0 0 4px 1px rgba(255, 255, 255, 0.2); transform: scale(1); opacity: 0.8; } 50% { box-shadow: 0 0 12px 3px rgba(255, 255, 255, 0.6); transform: scale(1.1); opacity: 1; } }
         .animate-led { animation: led-breathe 3s ease-in-out infinite; }
         @keyframes sweep { 0% { transform: translateX(-100%) skewX(-15deg); } 100% { transform: translateX(200%) skewX(-15deg); } }
         @keyframes fade-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
+        
+        /* THIS FIXES THE SCROLLBARS SO YOU CAN SEE ALL 12+ CHATS */
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.15); border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 10px; }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.25); }
-        .theme-grey .bg-\\[\\#111827\\]\\/80 { background-color: rgba(43, 43, 54, 0.8) !important; }
-        .theme-grey .bg-\\[\\#1F2937\\]\\/70 { background-color: rgba(56, 56, 70, 0.7) !important; }
-        .theme-grey .bg-\\[\\#1F2937\\]\\/60 { background-color: rgba(56, 56, 70, 0.6) !important; }
-        .theme-grey .bg-\\[\\#1F2937\\]\\/80 { background-color: rgba(56, 56, 70, 0.8) !important; }
-        .theme-grey .bg-\\[\\#1F2937\\]\\/95 { background-color: rgba(56, 56, 70, 0.95) !important; }
-        .theme-grey .bg-\\[\\#1F2937\\] { background-color: #383846 !important; }
-        .theme-black .bg-\\[\\#111827\\]\\/80 { background-color: rgba(10, 10, 10, 0.8) !important; }
-        .theme-black .bg-\\[\\#1F2937\\]\\/70 { background-color: rgba(20, 20, 20, 0.7) !important; }
-        .theme-black .bg-\\[\\#1F2937\\]\\/60 { background-color: rgba(20, 20, 20, 0.6) !important; }
-        .theme-black .bg-\\[\\#1F2937\\]\\/80 { background-color: rgba(20, 20, 20, 0.8) !important; }
-        .theme-black .bg-\\[\\#1F2937\\]\\/95 { background-color: rgba(20, 20, 20, 0.95) !important; }
-        .theme-black .bg-\\[\\#1F2937\\] { background-color: #141414 !important; }
       `}} />
 
       {/* ─── LEFT SIDEBAR NAVIGATION ─── */}
-      <div className="w-64 border-r border-white/10 bg-[#111827]/80 backdrop-blur-3xl flex flex-col z-40 shadow-[10px_0_30px_rgba(0,0,0,0.3)] shrink-0">
-        <div className="h-20 flex items-center px-6 border-b border-white/10">
-          {/* WHITE-LABELED LOGO & BRAND NAME */}
+      <div className="w-64 border-r border-white/10 bg-[#111827]/90 backdrop-blur-3xl flex flex-col z-40 shrink-0 h-full">
+        <div className="h-20 flex items-center px-6 border-b border-white/10 shrink-0">
           <h1 className="text-xl font-extrabold tracking-tight text-white flex items-center gap-2 drop-shadow-[0_0_10px_rgba(255,255,255,0.1)]">
             <span className={`w-8 h-8 rounded-lg bg-gradient-to-br ${activeTheme.gradient} flex items-center justify-center ${activeTheme.shadow}`}>
                <MessageCircle className="w-5 h-5 text-white" />
             </span>
-            <span className="truncate">{brandFirstName} <span className={activeTheme.text}>{brandLastName}</span></span>
+            <span className="truncate">{brandFirstName} <span className={activeTheme.text.replace('text-', '')}>{brandLastName}</span></span>
           </h1>
         </div>
         
-        <div className="flex-1 py-6 px-4 space-y-2">
+        <div className="flex-1 py-6 px-4 space-y-2 overflow-y-auto custom-scrollbar">
           {userRole === 'ADMIN' && (
             <button onClick={() => setActiveView('dashboard')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 font-medium text-sm ${activeView === 'dashboard' ? `${activeTheme.bgSubtle} ${activeTheme.text} ${activeTheme.border} border shadow-inner font-semibold` : 'text-zinc-300 hover:bg-white/5 hover:text-white'}`}><LayoutDashboard className="w-4 h-4" /> Dashboard</button>
           )}
@@ -555,7 +387,7 @@ export default function Dashboard() {
           )}
         </div>
 
-        <div className="p-4 border-t border-white/10 bg-[#0F172A]/40 flex flex-col gap-3">
+        <div className="p-4 border-t border-white/10 bg-[#0F172A]/40 flex flex-col gap-3 shrink-0">
           <div className="flex items-center justify-between px-2 text-[9px] font-bold text-zinc-400 uppercase tracking-widest">
             <span>Access Level</span>
             <span className={userRole === 'ADMIN' ? activeTheme.text : 'text-zinc-400'}>{userRole}</span>
@@ -578,10 +410,10 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* ─── MAIN CONTENT AREA ─── */}
-      <div className="flex-1 flex flex-col h-full overflow-hidden relative z-30">
+      {/* ─── MAIN VIEWPORT (This will now completely scroll!) ─── */}
+      <div className="flex-1 flex flex-col h-full relative z-30">
         
-        {/* VIEW: DASHBOARD (Overview) */}
+        {/* DASHBOARD VIEW */}
         {activeView === 'dashboard' && userRole === 'ADMIN' && (
           <div className="flex flex-col h-full animate-[fade-in_0.3s_ease-out]">
             <div className="h-20 flex items-center justify-between px-6 border-b border-white/10 bg-[#111827]/80 backdrop-blur-xl shrink-0">
@@ -600,8 +432,9 @@ export default function Dashboard() {
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto custom-scrollbar p-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            {/* This is the magic scroll container for the WHOLE Dashboard */}
+            <div className="flex-1 p-6 overflow-y-auto custom-scrollbar flex flex-col">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6 shrink-0">
                   <div className="bg-[#1F2937]/70 backdrop-blur-2xl border border-white/10 rounded-2xl p-5 shadow-xl relative overflow-hidden">
                      <div className={`absolute top-0 left-0 w-1 h-full ${activeTheme.bg}`} />
                      <div className="flex justify-between items-start mb-3 pl-2">
@@ -643,33 +476,26 @@ export default function Dashboard() {
                   </div>
                 </div>
 
-                <div className="bg-[#111827]/60 backdrop-blur-xl border border-white/10 rounded-2xl p-5 shadow-2xl flex flex-col h-[calc(100vh-220px)]">
+                <div className="bg-[#111827]/60 backdrop-blur-xl border border-white/10 rounded-2xl p-5 shadow-2xl flex flex-col flex-1">
                   <div className="flex items-center justify-between mb-4 px-1 shrink-0">
                      <h3 className="text-sm font-bold text-white drop-shadow-sm">Live Action Board</h3>
-                     
                      <div className="relative w-64">
                         <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                        <input 
-                           type="text" 
-                           placeholder="Search database..." 
-                           value={globalSearch}
-                           onChange={(e) => setGlobalSearch(e.target.value)}
-                           className={`w-full bg-[#1F2937] border border-white/10 rounded-lg pl-9 pr-3 py-1.5 text-xs text-white ${activeTheme.focusBorder} outline-none transition-all shadow-inner placeholder-zinc-500`}
-                        />
+                        <input type="text" placeholder="Search database..." value={globalSearch} onChange={(e) => setGlobalSearch(e.target.value)} className={`w-full bg-[#1F2937] border border-white/10 rounded-lg pl-9 pr-3 py-1.5 text-xs text-white ${activeTheme.focusBorder} outline-none transition-all shadow-inner placeholder-zinc-500`} />
                      </div>
                   </div>
 
-                  <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 items-start flex-1 overflow-hidden">
-                    {COLUMNS.map((status, index) => {
+                  {/* Removed the fixed height constraints so the columns grow with their contents */}
+                  <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 items-start">
+                    {COLUMNS.map((status) => {
                       const config = COLUMN_CONFIG[status];
                       const ColumnIcon = config.icon;
                       const colLeads = searchedLeads.filter(l => l.status === status);
 
                       return (
-                        <div key={status} onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, status)}
-                          className={`flex flex-col gap-3 h-full relative group transition-all duration-700 ease-out transform ${isMounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-12'}`} style={{ transitionDelay: `${index * 100}ms` }}>
+                        <div key={status} onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, status)} className={`flex flex-col h-full bg-[#0F172A]/30 rounded-xl border border-white/5 relative group transition-all duration-700 ease-out transform ${isMounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-12'}`}>
                           
-                          <div className="flex items-center justify-between p-3 rounded-xl border border-white/10 shadow-sm bg-[#1F2937]/80 backdrop-blur-md shrink-0">
+                          <div className="flex items-center justify-between p-3 bg-[#1F2937]/80 rounded-t-xl border-b border-white/10 shrink-0">
                             <div className="flex items-center gap-2">
                                <ColumnIcon className="w-3.5 h-3.5" style={{ color: config.hex, filter: `drop-shadow(0 0 5px ${config.hex})` }} />
                                <h2 className="text-[10px] font-bold tracking-widest text-white uppercase">{status.replace('_', ' ')}</h2>
@@ -677,7 +503,7 @@ export default function Dashboard() {
                             <span className={`text-[9px] font-bold text-white ${config.twBg} bg-opacity-20 px-2 py-0.5 rounded-full border border-${config.hex}/30`}>{colLeads.length}</span>
                           </div>
 
-                          <div className={`flex flex-col gap-2.5 flex-1 overflow-y-auto rounded-xl p-1 transition-all custom-scrollbar ${draggedLead ? 'bg-white/5 border border-dashed border-white/20' : 'border border-transparent'}`}>
+                          <div className={`p-2 flex flex-col gap-2.5 transition-all ${draggedLead ? 'bg-white/5 border-dashed border-white/20' : 'border-transparent'}`}>
                             {colLeads.map((lead) => {
                               const isSlaBreached = status === 'NEW_ORDER' && (now - new Date(lead.created_at).getTime() > 900000);
                               const viewers = presenceState[lead.id]?.filter(name => name !== settings.adminName) || [];
@@ -700,11 +526,7 @@ export default function Dashboard() {
                                         {lead.tags.map((tagId: string) => {
                                            const tagMeta = AVAILABLE_TAGS.find(t => t.id === tagId);
                                            if (!tagMeta) return null;
-                                           return (
-                                              <span key={tagId} className={`text-[8px] font-bold uppercase tracking-widest px-1.5 py-[2px] rounded border ${tagMeta.color}`}>
-                                                 {tagMeta.label}
-                                              </span>
-                                           );
+                                           return ( <span key={tagId} className={`text-[8px] font-bold uppercase tracking-widest px-1.5 py-[2px] rounded border ${tagMeta.color}`}>{tagMeta.label}</span> );
                                         })}
                                      </div>
                                   )}
@@ -745,7 +567,7 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* ─── VIEW: CONVERSATIONS (AGENT DEFAULT) ─── */}
+        {/* CONVERSATIONS VIEW (Agent & Admin) */}
         {activeView === 'conversations' && (
           <div className="flex flex-col h-full animate-[fade-in_0.3s_ease-out]">
             <div className="h-20 flex items-center justify-between px-6 border-b border-white/10 bg-[#111827]/80 backdrop-blur-xl shrink-0">
@@ -753,32 +575,25 @@ export default function Dashboard() {
                 <h2 className="text-lg font-bold text-white drop-shadow-md">Conversations</h2>
                 <p className="text-[10px] text-zinc-400 font-medium tracking-wide mt-0.5">Manage and route your active customer chats</p>
               </div>
-              
               <div className="relative w-64">
                   <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                  <input 
-                     type="text" 
-                     placeholder="Search database..." 
-                     value={globalSearch}
-                     onChange={(e) => setGlobalSearch(e.target.value)}
-                     className={`w-full bg-[#1F2937] border border-white/10 rounded-lg pl-9 pr-3 py-1.5 text-xs text-white ${activeTheme.focusBorder} outline-none transition-all shadow-inner placeholder-zinc-500`}
-                  />
+                  <input type="text" placeholder="Search database..." value={globalSearch} onChange={(e) => setGlobalSearch(e.target.value)} className={`w-full bg-[#1F2937] border border-white/10 rounded-lg pl-9 pr-3 py-1.5 text-xs text-white ${activeTheme.focusBorder} outline-none transition-all shadow-inner placeholder-zinc-500`} />
                </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto custom-scrollbar p-6">
-               <div className="bg-[#111827]/60 backdrop-blur-xl border border-white/10 rounded-2xl p-5 shadow-2xl flex flex-col h-full">
-                  <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 items-start flex-1 overflow-hidden">
-                    {COLUMNS.map((status, index) => {
+            {/* This scroll container fixes the list for 1000+ chats */}
+            <div className="flex-1 p-6 overflow-y-auto custom-scrollbar flex flex-col">
+               <div className="bg-[#111827]/60 backdrop-blur-xl border border-white/10 rounded-2xl p-5 shadow-2xl flex flex-col flex-1">
+                  <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 items-start">
+                    {COLUMNS.map((status) => {
                       const config = COLUMN_CONFIG[status];
                       const ColumnIcon = config.icon;
                       const colLeads = searchedLeads.filter(l => l.status === status);
 
                       return (
-                        <div key={status} onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, status)}
-                          className={`flex flex-col gap-3 h-full relative group transition-all duration-700 ease-out transform ${isMounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-12'}`} style={{ transitionDelay: `${index * 100}ms` }}>
+                        <div key={status} onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, status)} className={`flex flex-col h-full bg-[#0F172A]/30 rounded-xl border border-white/5 relative group transition-all duration-700 ease-out transform ${isMounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-12'}`}>
                           
-                          <div className="flex items-center justify-between p-3 rounded-xl border border-white/10 shadow-sm bg-[#1F2937]/80 backdrop-blur-md shrink-0">
+                          <div className="flex items-center justify-between p-3 bg-[#1F2937]/80 rounded-t-xl border-b border-white/10 shrink-0">
                             <div className="flex items-center gap-2">
                                <ColumnIcon className="w-3.5 h-3.5" style={{ color: config.hex, filter: `drop-shadow(0 0 5px ${config.hex})` }} />
                                <h2 className="text-[10px] font-bold tracking-widest text-white uppercase">{status.replace('_', ' ')}</h2>
@@ -786,7 +601,7 @@ export default function Dashboard() {
                             <span className={`text-[9px] font-bold text-white ${config.twBg} bg-opacity-20 px-2 py-0.5 rounded-full border border-${config.hex}/30`}>{colLeads.length}</span>
                           </div>
 
-                          <div className={`flex flex-col gap-2.5 flex-1 overflow-y-auto rounded-xl p-1 transition-all custom-scrollbar ${draggedLead ? 'bg-white/5 border border-dashed border-white/20' : 'border border-transparent'}`}>
+                          <div className={`p-2 flex flex-col gap-2.5 transition-all ${draggedLead ? 'bg-white/5 border-dashed border-white/20' : 'border-transparent'}`}>
                             {colLeads.map((lead) => {
                               const isSlaBreached = status === 'NEW_ORDER' && (now - new Date(lead.created_at).getTime() > 900000);
                               const viewers = presenceState[lead.id]?.filter(name => name !== settings.adminName) || [];
@@ -809,11 +624,7 @@ export default function Dashboard() {
                                         {lead.tags.map((tagId: string) => {
                                            const tagMeta = AVAILABLE_TAGS.find(t => t.id === tagId);
                                            if (!tagMeta) return null;
-                                           return (
-                                              <span key={tagId} className={`text-[8px] font-bold uppercase tracking-widest px-1.5 py-[2px] rounded border ${tagMeta.color}`}>
-                                                 {tagMeta.label}
-                                              </span>
-                                           );
+                                           return ( <span key={tagId} className={`text-[8px] font-bold uppercase tracking-widest px-1.5 py-[2px] rounded border ${tagMeta.color}`}>{tagMeta.label}</span> );
                                         })}
                                      </div>
                                   )}
@@ -856,7 +667,7 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* ─── VIEW: TEMPLATES HUB ─── */}
+        {/* TEMPLATES VIEW */}
         {activeView === 'templates' && (
           <div className="flex flex-col h-full animate-[fade-in_0.3s_ease-out]">
             <div className="h-20 flex items-center justify-between px-6 border-b border-white/10 bg-[#111827]/80 backdrop-blur-xl shrink-0">
@@ -923,7 +734,7 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* ─── VIEW: CAMPAIGNS HUB ─── */}
+        {/* CAMPAIGNS VIEW */}
         {activeView === 'campaigns' && userRole === 'ADMIN' && (
           <div className="flex flex-col h-full animate-[fade-in_0.3s_ease-out]">
             <div className="h-20 flex items-center justify-between px-6 border-b border-white/10 bg-[#111827]/80 backdrop-blur-xl shrink-0">
@@ -968,7 +779,7 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* ─── VIEW: ANALYTICS HUB ─── */}
+        {/* ANALYTICS VIEW */}
         {activeView === 'analytics' && userRole === 'ADMIN' && (
           <div className="flex flex-col h-full animate-[fade-in_0.3s_ease-out]">
             <div className="h-20 flex items-center justify-between px-6 border-b border-white/10 bg-[#111827]/80 backdrop-blur-xl shrink-0">
@@ -1056,7 +867,7 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* ─── VIEW: SETTINGS HUB ─── */}
+        {/* SETTINGS VIEW */}
         {activeView === 'settings' && userRole === 'ADMIN' && (
           <div className="flex flex-col h-full animate-[fade-in_0.3s_ease-out]">
             <div className="h-20 flex items-center justify-between px-6 border-b border-white/10 bg-[#111827]/80 backdrop-blur-xl shrink-0">
@@ -1071,7 +882,6 @@ export default function Dashboard() {
                   {/* Left Column */}
                   <div className="space-y-6">
 
-                    {/* WHITE LABEL BRANDING CONFIG */}
                     <div className={`bg-[#1F2937]/60 backdrop-blur-xl border ${activeTheme.border} rounded-2xl p-6 shadow-2xl relative overflow-hidden`}>
                        <div className={`absolute top-0 right-0 w-32 h-32 ${activeTheme.bgSubtle} blur-[50px] pointer-events-none`}></div>
                        <h3 className={`text-xs font-bold ${activeTheme.text} flex items-center gap-1.5 mb-5`}><Sparkles className="w-4 h-4" /> Workspace Branding</h3>
@@ -1198,7 +1008,7 @@ export default function Dashboard() {
         )}
       </div>
 
-      {/* ─── SLIDE-OUT CHAT & PROFILING PANE (WIDE) ─── */}
+      {/* ─── SLIDE-OUT CHAT & PROFILING PANE ─── */}
       <div className={`fixed top-0 right-0 h-full w-full md:w-[90vw] xl:w-[1200px] bg-[#111827]/95 backdrop-blur-3xl border-l border-white/10 z-50 transform transition-transform duration-500 flex flex-row shadow-[-20px_0_50px_rgba(0,0,0,0.5)] ${selectedLead ? 'translate-x-0' : 'translate-x-full'}`}>
         {selectedLead && (
           <>
