@@ -67,8 +67,6 @@ const COLUMN_CONFIG: Record<string, { icon: any, hex: string, label: string }> =
   'RESOLVED': { icon: ShieldCheck, hex: '#84cc16', label: 'Resolved' }
 };
 
-const COLUMNS = Object.keys(COLUMN_CONFIG);
-
 // ─── BACKGROUND EFFECTS ───
 const BgEffects = memo(({ isDark }: { isDark: boolean }) => (
   <div className={`fixed inset-0 -z-30 pointer-events-none overflow-hidden transition-colors duration-700 ${isDark ? 'bg-[#0B0F19]' : 'bg-[#f4f7f9]'}`}>
@@ -78,22 +76,6 @@ const BgEffects = memo(({ isDark }: { isDark: boolean }) => (
   </div>
 ));
 BgEffects.displayName = "BgEffects";
-
-// ─── PAGE WRAPPER ───
-const PageWrapper = ({ title, subtitle, children, rightHeader, ui }: any) => (
-  <div className="flex flex-col h-full animate-[fade-in_0.3s_ease-out] mr-4 mb-4 mt-6">
-    <div className={`${ui.glass} rounded-3xl p-8 shadow-sm h-full flex flex-col transition-colors duration-300`}>
-      <div className="flex items-center justify-between mb-8 shrink-0">
-        <div>
-          <h2 className={`text-xl font-bold ${ui.textMain} tracking-tight mb-2`}>{title}</h2>
-          <p className={`text-[11px] ${ui.textMuted} font-medium`}>{subtitle}</p>
-        </div>
-        {rightHeader && <div>{rightHeader}</div>}
-      </div>
-      <div className="flex-1 overflow-y-auto custom-scrollbar pr-2">{children}</div>
-    </div>
-  </div>
-);
 
 // ─── MAIN COMPONENT ───
 export default function CRMDashboard() {
@@ -479,14 +461,14 @@ export default function CRMDashboard() {
       {/* ─── DYNAMIC CONTENT AREA ─── */}
       <div className="flex-1 flex flex-col h-full overflow-hidden p-4 pb-4">
         
-        {/* TOP HEADER */}
-        <div className={`h-16 mb-4 rounded-2xl ${ui.card} border ${ui.border} flex items-center justify-between px-6 shrink-0 shadow-sm transition-colors duration-300 relative z-50`}>
+        {/* TOP HEADER (Fixed Z-Index & Dropdowns) */}
+        <div className={`relative z-50 h-16 mb-4 rounded-2xl ${ui.card} border ${ui.border} flex items-center justify-between px-6 shrink-0 shadow-sm transition-colors duration-300`}>
            <h2 className={`text-lg font-bold ${ui.textMain} capitalize`}>{activeView}</h2>
            <div className="flex items-center gap-2">
               <div className="relative">
                  <button onClick={() => setShowThemePicker(!showThemePicker)} className={`p-2 rounded-full ${ui.textMuted} ${ui.hover} transition-colors`}><Palette className="w-4 h-4" /></button>
                  {showThemePicker && (
-                   <div className={`absolute top-full mt-2 right-0 ${ui.card} border ${ui.border} rounded-2xl p-4 shadow-xl z-50 flex gap-3`}>
+                   <div className={`absolute top-full mt-2 right-0 ${ui.card} border ${ui.border} rounded-2xl p-4 shadow-2xl z-[100] flex gap-3`}>
                      {Object.keys(THEMES).map(k => ( <button key={k} onClick={() => { setSettings((s: any) => ({ ...s, accentColor: k })); localStorage.setItem('chatrax_theme', k); setShowThemePicker(false); }} className={`w-6 h-6 rounded-full shadow-sm hover:scale-110 transition-transform ${THEMES[k].bg} ${settings.accentColor === k ? 'ring-2 ring-white ring-offset-2 ring-offset-slate-900' : ''}`} title={THEMES[k].name} /> ))}
                    </div>
                  )}
@@ -498,7 +480,7 @@ export default function CRMDashboard() {
                   {newLeads.length > 0 && <span className="absolute top-1.5 right-2 w-2 h-2 bg-red-500 rounded-full border border-[#1F2937]"></span>}
                 </button>
                 {showNotifications && (
-                   <div className={`absolute top-full mt-2 right-0 w-72 ${ui.glass} border ${ui.border} rounded-2xl p-2 shadow-xl z-50`}>
+                   <div className={`absolute top-full mt-2 right-0 w-72 ${ui.card} border ${ui.border} rounded-2xl p-2 shadow-2xl z-[100]`}>
                      <div className={`p-3 border-b ${ui.border}`}><p className={`text-xs font-bold ${ui.textMain}`}>Recent Alerts</p></div>
                      <div className="max-h-60 overflow-y-auto hover-scroll p-1">
                         {newLeads.length === 0 ? <p className={`p-4 text-center text-xs ${ui.textMuted}`}>All caught up!</p> : newLeads.slice(0,5).map((l: any) => (
@@ -515,7 +497,7 @@ export default function CRMDashboard() {
         </div>
 
         {/* INLINED VIEW ROUTER TO PREVENT COMPONENT RECREATION & FOCUS LOSS */}
-        <div className="flex-1 overflow-hidden relative">
+        <div className="flex-1 overflow-hidden relative z-0">
           
           {/* DASHBOARD */}
           {activeView === 'dashboard' && (
@@ -578,9 +560,11 @@ export default function CRMDashboard() {
             </div>
           )}
 
-          {/* INBOX */}
+          {/* INBOX (The 3-Pane View) */}
           {activeView === 'inbox' && (
             <div className="flex h-full overflow-hidden animate-[fade-in_0.3s_ease-out] relative">
+              
+              {/* 1. CONTACT LIST (Left Pane) */}
               <div className={`w-full md:w-80 flex flex-col ${ui.bgSidebar} border-r ${ui.border} shrink-0 h-full`}>
                 <div className={`p-4 border-b ${ui.border}`}>
                   <div className="relative mb-3">
@@ -609,13 +593,16 @@ export default function CRMDashboard() {
                 </div>
               </div>
 
+              {/* CLICK-OUTSIDE BACKDROP FOR MOBILE */}
               {selectedLead && (
                 <div className="fixed inset-0 z-40 bg-slate-900/40 backdrop-blur-sm lg:hidden" onClick={() => setSelectedLead(null)} />
               )}
 
+              {/* 2 & 3. CHAT WINDOW & PROFILE (Center & Right Pane) */}
               <div className={`absolute lg:relative right-0 top-0 bottom-0 z-50 flex h-full w-[95vw] lg:w-auto lg:flex-1 transform transition-transform duration-500 ${selectedLead ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'} ${ui.bgMain}`}>
                 {selectedLead ? (
                   <>
+                    {/* CENTER: CHAT WINDOW */}
                     <div className={`flex-1 flex flex-col ${ui.bgMain} relative`}>
                       <div className={`p-4 border-b ${ui.border} flex justify-between items-center ${ui.bgSidebar}`}>
                         <div className="flex items-center gap-3">
@@ -668,6 +655,7 @@ export default function CRMDashboard() {
                       </div>
                     </div>
 
+                    {/* RIGHT: CUSTOMER PROFILE (Hidden on small screens) */}
                     <div className={`hidden xl:flex w-72 flex-col border-l ${ui.border} ${ui.bgSidebar} overflow-y-auto hover-scroll shrink-0`}>
                       <div className={`p-6 border-b ${ui.border} text-center`}>
                         <div className={`w-16 h-16 mx-auto rounded-full ${t.bg} text-white flex items-center justify-center text-2xl font-black mb-3 shadow-lg`}>{selectedLead.full_name?.charAt(0) || <User/>}</div>
