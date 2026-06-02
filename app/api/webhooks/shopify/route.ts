@@ -51,12 +51,15 @@ export async function POST(req: Request) {
         if (error || !newCustomer) throw new Error("Failed to create customer from Shopify data");
         customer = newCustomer;
       } else {
-         // Update existing customer lead
-         await supabase.from('customers').update({ 
-           last_message: botMessage, 
-           status: 'ACTIVE' 
-         }).eq('id', customer.id);
-      }
+        // Update existing customer with the latest order name and message
+        const latestName = `${body.customer?.first_name || ''} ${body.customer?.last_name || ''}`.trim();
+        
+        await supabase.from('customers').update({ 
+          full_name: latestName !== '' ? latestName : undefined, // Overwrites name if provided
+          last_message: botMessage, 
+          status: 'ACTIVE' 
+        }).eq('id', customer.id);
+     }
 
       // 2. Log the automated message to Supabase (Triggers UI update instantly)
       await supabase.from('messages').insert({

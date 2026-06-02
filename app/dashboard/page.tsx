@@ -71,6 +71,8 @@ BgEffects.displayName = "BgEffects";
 // ─── MAIN COMPONENT ───
 export default function CRMDashboard() {
   const router = useRouter();
+  // Change this from true to false
+const SIMULATE_MESSAGING = false;
   const [isMounted, setIsMounted] = useState(false);
   const [activeView, setActiveView] = useState('inbox'); 
   const [isDarkMode, setIsDarkMode] = useState(true);
