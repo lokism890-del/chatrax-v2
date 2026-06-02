@@ -4,16 +4,15 @@ import React, { useEffect, useState, useRef, useCallback, useMemo, memo } from '
 import { useRouter } from 'next/navigation';
 import { supabase } from '../../lib/supabase';
 import { 
-  LayoutDashboard, Inbox, Users as UsersIcon, Briefcase, Megaphone, Workflow, 
+  LayoutDashboard, Inbox, Users as UsersIcon, Briefcase, Megaphone, Workflow,
   BarChart2, UserCheck, FileText, Settings, Search, Bell, Send, 
-  Bot, Star, Phone, MoreVertical, Flame, Clock, Plus, Activity, 
-  CheckCircle2, TrendingUp, TrendingDown, Zap, Paperclip, User, 
+  Bot, Phone, MoreVertical, Flame, Clock, Plus, Activity, 
+  CheckCircle2, TrendingUp, Zap, Paperclip, User, 
   StickyNote, MessageCircle, Globe, Sun, Moon, LogOut, MessageSquare, 
-  Palette, X, LayoutTemplate, Trash2, Edit2, Copy, Check, ShieldCheck, 
-  ShoppingBag, CheckCheck, List, MousePointerClick, Download, CreditCard, 
-  Shield, UploadCloud, Link, Calendar, Target, PieChart, Loader2, AlertTriangle, Eye, Sparkles
+  Palette, X, LayoutTemplate, Trash2, Edit2, Copy, Check, ShieldCheck,
+  ShoppingBag, CheckCheck, List, MousePointerClick, CreditCard, 
+  Shield, UploadCloud, Link, Calendar, Target, PieChart, Loader2, Sparkles, Power, PowerOff
 } from 'lucide-react';
-import { jsPDF } from "jspdf";
 
 // ─── CONSTANTS & CONFIG ───
 const LEMON_SQUEEZY_LINKS: Record<string, string> = {
@@ -31,7 +30,6 @@ const NAV_MENU = [
   { id: 'automation', icon: Workflow, label: 'Automation' },
   { id: 'analytics', icon: BarChart2, label: 'Analytics' },
   { id: 'team', icon: UserCheck, label: 'Team' },
-  { id: 'reports', icon: FileText, label: 'Reports' },
   { id: 'settings', icon: Settings, label: 'Settings' }
 ];
 
@@ -52,13 +50,6 @@ const THEMES: Record<string, ThemeColor> = {
   charcoal: { name: 'Charcoal', bg: 'bg-slate-700', text: 'text-slate-300', grad: 'from-slate-600 to-slate-800', sub: 'bg-slate-500/10', border: 'border-slate-500/20', borderActive: 'border-slate-500/50' },
   silver: { name: 'Silver', bg: 'bg-gray-500', text: 'text-gray-400', grad: 'from-gray-400 to-gray-600', sub: 'bg-gray-500/10', border: 'border-gray-500/20', borderActive: 'border-gray-500/50' }
 };
-
-const AVAILABLE_TAGS = [
-  { id: 'vip', label: 'VIP', color: 'bg-red-100 text-red-600 border-red-200 dark:bg-red-500/20 dark:text-red-400 dark:border-red-500/30' },
-  { id: 'refund', label: 'Refund', color: 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-500/20 dark:text-amber-400 dark:border-amber-500/30' },
-  { id: 'wholesale', label: 'Wholesale', color: 'bg-purple-100 text-purple-600 border-purple-200 dark:bg-purple-500/20 dark:text-purple-400 dark:border-purple-500/30' },
-  { id: 'urgent', label: 'Urgent', color: 'bg-orange-100 text-orange-600 border-orange-200 dark:bg-orange-500/20 dark:text-orange-400 dark:border-orange-500/30' }
-];
 
 const COLUMN_CONFIG: Record<string, { icon: any, hex: string, label: string }> = {
   'NEW_ORDER': { icon: ShoppingBag, hex: '#10b981', label: 'New Orders' },
@@ -97,13 +88,22 @@ export default function CRMDashboard() {
   const [globalSearch, setGlobalSearch] = useState('');
   const [chatFilter, setChatFilter] = useState('All');
   const [isInternal, setIsInternal] = useState(false);
-  const [editProfile, setEditProfile] = useState({ full_name: '', email: '', profile_notes: '' });
   
   const [showTagInput, setShowTagInput] = useState(false);
   const [newTag, setNewTag] = useState('');
 
   const [totalSent, setTotalSent] = useState(0);
   const [totalReceived, setTotalReceived] = useState(0);
+  
+  const [now, setNow] = useState(Date.now());
+  const [presenceState, setPresenceState] = useState<Record<string, string[]>>({});
+
+  // Automations State
+  const [automations, setAutomations] = useState([
+    { id: '1', name: 'Welcome Bot', trigger: 'New incoming message', action: 'Send template: /welcome', active: true, icon: Bot, type: 'welcome' },
+    { id: '2', name: 'Abandoned Cart Recovery', trigger: 'Shopify cart inactive (15m)', action: 'Send template: /cart_recovery', active: false, icon: ShoppingBag, type: 'cart' },
+    { id: '3', name: 'Out of Office', trigger: 'Outside business hours', action: 'Send template: /away_msg', active: true, icon: Moon, type: 'away' }
+  ]);
 
   // Tools & Modules State
   const [settings, setSettings] = useState({ 
@@ -127,10 +127,7 @@ export default function CRMDashboard() {
   
   const [isUploadingCSV, setIsUploadingCSV] = useState(false);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
-  const [subscription, setSubscription] = useState({ status: 'active', daysLeft: 7, plan: 'Pro', messageLimit: 2500 });
-  const [presenceState, setPresenceState] = useState<Record<string, string[]>>({});
   
-  const [now, setNow] = useState(Date.now());
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const presenceChannelRef = useRef<any>(null);
   const alertedLeadsRef = useRef<Set<string>>(new Set());
@@ -146,12 +143,13 @@ export default function CRMDashboard() {
     muted: isDarkMode ? 'text-slate-400' : 'text-slate-500',
     textMuted: isDarkMode ? 'text-slate-400' : 'text-slate-500',
     border: isDarkMode ? 'border-slate-800' : 'border-slate-200',
-    input: isDarkMode ? 'bg-[#111827] border-slate-700 text-slate-100 placeholder-slate-500 focus:border-slate-500' : 'bg-slate-50 border-slate-200 text-slate-800 placeholder-slate-400 focus:border-slate-400',
+    input: isDarkMode 
+      ? 'bg-[#111827] border-slate-700 text-slate-100 placeholder-slate-500 focus:border-amber-500 focus:ring-1 focus:ring-amber-500' 
+      : 'bg-slate-100 border-slate-300 text-slate-900 placeholder-slate-400 focus:bg-white focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 shadow-sm',
     hover: isDarkMode ? 'hover:bg-[#374151]' : 'hover:bg-slate-100',
-    glass: isDarkMode ? 'bg-[#0f172a]/80 backdrop-blur-3xl border-slate-800' : 'bg-white/70 backdrop-blur-3xl border-white/60',
+    glass: isDarkMode ? 'bg-[#0f172a]/60 backdrop-blur-3xl border-slate-700/50 shadow-[0_8px_32px_rgba(0,0,0,0.5)]' : 'bg-white/80 backdrop-blur-3xl border-white/60 shadow-[0_8px_32px_rgba(0,0,0,0.1)]',
     accentText: 'text-amber-500',
-    accent: 'bg-amber-500 text-slate-900',
-    neonShadow: 'shadow-[0_0_15px_rgba(245,158,11,0.15)]'
+    accent: 'bg-amber-500 text-slate-900'
   }), [isDarkMode]);
 
   const t = THEMES[settings.accentColor] || THEMES.emerald;
@@ -290,7 +288,6 @@ export default function CRMDashboard() {
 
   useEffect(() => {
     if (!selectedLead) return;
-    setEditProfile({ full_name: selectedLead.full_name || '', email: selectedLead.email || '', profile_notes: selectedLead.profile_notes || '' });
     const getChat = async () => { 
       const { data } = await supabase.from('messages').select('*').eq('customer_id', selectedLead.id).order('created_at', { ascending: true }); 
       if (data) setMessages(data); 
@@ -405,6 +402,12 @@ export default function CRMDashboard() {
     setShowTagInput(false);
   };
 
+  const toggleAutomation = (id: string) => {
+    setAutomations(prev => prev.map(a => a.id === id ? { ...a, active: !a.active } : a));
+    const auto = automations.find(a => a.id === id);
+    logAudit('AUTOMATION_TOGGLED', `${auto?.name} set to ${!auto?.active ? 'Active' : 'Inactive'}`);
+  };
+
   if (!isMounted) return null;
 
   // ─── MAIN RETURN (FULLY FLATTENED) ───
@@ -437,7 +440,7 @@ export default function CRMDashboard() {
           {NAV_MENU.slice(0, 6).map((item) => (
             <button key={item.id} onClick={() => { setActiveView(item.id); if (item.id === 'inbox') setSelectedLead(null); }} className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-300 font-bold text-xs ${activeView === item.id ? `${t.bg} text-white shadow-md` : `${ui.textMuted} ${ui.hover}`}`}>
                <div className="flex items-center gap-3"><item.icon className={`w-4 h-4 ${activeView === item.id ? '' : 'opacity-70'}`} /> {item.label}</div>
-               {item.id === 'inbox' && <span className={`text-[9px] px-2 py-0.5 rounded-md ${activeView === item.id ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-800 text-amber-500'} font-black`}>{leads.filter(l=>l.status!=='RESOLVED').length}</span>}
+               {item.id === 'inbox' && <span className={`text-[9px] px-2 py-0.5 rounded-md ${activeView === item.id ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-800 text-amber-500'} font-black`}>{leads.length}</span>}
             </button>
           ))}
           <p className={`text-[10px] font-bold uppercase tracking-widest ${ui.textMuted} px-3 mb-3 mt-6`}>Management</p>
@@ -468,7 +471,7 @@ export default function CRMDashboard() {
               <div className="relative">
                  <button onClick={() => setShowThemePicker(!showThemePicker)} className={`p-2 rounded-full ${ui.textMuted} ${ui.hover} transition-colors`}><Palette className="w-4 h-4" /></button>
                  {showThemePicker && (
-                   <div className={`absolute top-full mt-2 right-0 ${ui.card} border ${ui.border} rounded-2xl p-4 shadow-2xl z-[100] flex gap-3`}>
+                   <div className={`absolute top-full mt-2 right-0 ${ui.glass} border ${ui.border} rounded-2xl p-4 flex gap-3 shadow-[0_8px_32px_rgba(0,0,0,0.5)]`}>
                      {Object.keys(THEMES).map(k => ( <button key={k} onClick={() => { setSettings((s: any) => ({ ...s, accentColor: k })); localStorage.setItem('chatrax_theme', k); setShowThemePicker(false); }} className={`w-6 h-6 rounded-full shadow-sm hover:scale-110 transition-transform ${THEMES[k].bg} ${settings.accentColor === k ? 'ring-2 ring-white ring-offset-2 ring-offset-slate-900' : ''}`} title={THEMES[k].name} /> ))}
                    </div>
                  )}
@@ -480,7 +483,7 @@ export default function CRMDashboard() {
                   {newLeads.length > 0 && <span className="absolute top-1.5 right-2 w-2 h-2 bg-red-500 rounded-full border border-[#1F2937]"></span>}
                 </button>
                 {showNotifications && (
-                   <div className={`absolute top-full mt-2 right-0 w-72 ${ui.card} border ${ui.border} rounded-2xl p-2 shadow-2xl z-[100]`}>
+                   <div className={`absolute top-full mt-2 right-0 w-72 ${ui.glass} border ${ui.border} rounded-2xl p-2 shadow-[0_8px_32px_rgba(0,0,0,0.5)]`}>
                      <div className={`p-3 border-b ${ui.border}`}><p className={`text-xs font-bold ${ui.textMain}`}>Recent Alerts</p></div>
                      <div className="max-h-60 overflow-y-auto hover-scroll p-1">
                         {newLeads.length === 0 ? <p className={`p-4 text-center text-xs ${ui.textMuted}`}>All caught up!</p> : newLeads.slice(0,5).map((l: any) => (
@@ -579,7 +582,7 @@ export default function CRMDashboard() {
                 </div>
                 <div className="flex-1 overflow-y-auto hover-scroll">
                   {inboxLeads.map((contact: any) => (
-                    <div key={contact.id} onClick={() => setSelectedLead(contact)} className={`p-4 border-b ${ui.border} cursor-pointer transition-colors ${selectedLead?.id === contact.id ? (isDarkMode ? 'bg-slate-800' : 'bg-slate-100') : ui.hover}`}>
+                    <div key={contact.id} onClick={() => setSelectedLead(contact)} className={`p-4 border-b ${ui.border} cursor-pointer transition-all duration-300 ${selectedLead?.id === contact.id ? (isDarkMode ? 'bg-slate-800/80 shadow-[inset_4px_0_0_rgba(245,158,11,1),0_0_20px_rgba(245,158,11,0.15)] z-10 relative' : 'bg-white shadow-[inset_4px_0_0_rgba(245,158,11,1),0_0_20px_rgba(245,158,11,0.2)] z-10 relative') : ui.hover}`}>
                       <div className="flex justify-between items-start mb-1">
                         <span className={`text-sm font-bold ${ui.textMain} truncate pr-2`}>{contact.full_name || contact.phone_number}</span>
                         <span className={`text-[9px] ${ui.textMuted} shrink-0`}>{new Date(contact.created_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</span>
@@ -636,7 +639,7 @@ export default function CRMDashboard() {
                       <div className={`p-4 ${ui.bgSidebar} border-t ${ui.border}`}>
                         {showCommandMenu && (
                           <div className={`absolute bottom-[100px] left-6 mb-2 w-80 max-h-60 overflow-y-auto hover-scroll ${ui.glass} border ${ui.border} rounded-2xl shadow-2xl z-50 animate-[fade-in_0.2s_ease-out]`}>
-                            <div className={`p-3 border-b ${ui.border} sticky top-0`}><p className={`text-[10px] font-bold ${ui.textMuted} uppercase tracking-widest flex items-center gap-2`}><Zap className="w-3.5 h-3.5 text-amber-500" /> Command Engine</p></div>
+                            <div className={`p-3 border-b ${ui.border} sticky top-0 backdrop-blur-md`}><p className={`text-[10px] font-bold ${ui.textMuted} uppercase tracking-widest flex items-center gap-2`}><Zap className="w-3.5 h-3.5 text-amber-500" /> Command Engine</p></div>
                             <div className="p-2 flex flex-col gap-1">
                               {filteredReplies.length > 0 ? filteredReplies.map((reply: any) => (<button key={reply.id} type="button" onClick={() => { const w = chatInput.split(' '); w.pop(); setChatInput((w.join(' ') + (w.length>0?' ':'') + reply.content + ' ').trimStart()); setShowCommandMenu(false); }} className={`flex flex-col items-start p-3 rounded-xl transition-colors border border-transparent text-left ${ui.hover}`}><span className={`text-xs font-bold ${ui.textMain} mb-1`}>/{reply.shortcut}</span><span className={`text-[11px] ${ui.textMuted} line-clamp-2`}>{reply.content}</span></button>)) : ( <div className={`p-4 text-center text-xs ${ui.textMuted} font-medium`}>No matches.</div> )}
                             </div>
@@ -655,7 +658,7 @@ export default function CRMDashboard() {
                       </div>
                     </div>
 
-                    {/* RIGHT: CUSTOMER PROFILE (Hidden on small screens) */}
+                    {/* RIGHT: CUSTOMER PROFILE */}
                     <div className={`hidden xl:flex w-72 flex-col border-l ${ui.border} ${ui.bgSidebar} overflow-y-auto hover-scroll shrink-0`}>
                       <div className={`p-6 border-b ${ui.border} text-center`}>
                         <div className={`w-16 h-16 mx-auto rounded-full ${t.bg} text-white flex items-center justify-center text-2xl font-black mb-3 shadow-lg`}>{selectedLead.full_name?.charAt(0) || <User/>}</div>
@@ -737,7 +740,7 @@ export default function CRMDashboard() {
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6">
                     {filteredLeads.map((contact: any) => (
-                      <div key={contact.id} onClick={() => { setSelectedLead(contact); setActiveView('inbox'); }} className={`${ui.card} p-6 rounded-2xl border ${ui.border} hover:border-amber-500/50 transition-colors group cursor-pointer shadow-sm`}>
+                      <div key={contact.id} onClick={() => { setSelectedLead(contact); setActiveView('inbox'); }} className={`${ui.card} p-6 rounded-2xl border ${ui.border} hover:-translate-y-1 hover:shadow-xl transition-all duration-300 group cursor-pointer shadow-sm`}>
                         <div className="flex justify-between items-start mb-4">
                           <div className={`w-12 h-12 rounded-2xl ${t.sub} flex items-center justify-center font-bold text-lg ${t.text}`}>{contact.full_name?.charAt(0) || <User/>}</div>
                           <button className={`p-1.5 rounded-lg ${ui.textMuted} ${ui.hover}`}><MoreVertical className="w-4 h-4"/></button>
@@ -778,7 +781,10 @@ export default function CRMDashboard() {
                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                       {quickReplies.length === 0 ? ( <div className={`col-span-full p-10 text-center ${ui.card} border-dashed rounded-3xl ${ui.textMuted} text-sm font-medium`}>No templates yet.</div>
                       ) : ( quickReplies.map((reply: any) => (
-                          <div key={reply.id} className={`group ${ui.card} rounded-3xl p-6 transition-all duration-300 hover:-translate-y-1 relative min-h-[140px] shadow-sm hover:shadow-md`}>
+                          <div 
+                             key={reply.id} 
+                             className={`group ${ui.card} rounded-3xl p-6 relative min-h-[140px] shadow-sm hover:shadow-2xl hover:-translate-y-1 transition-all duration-300`}
+                          >
                              {editingTemplateId === reply.id ? (
                                 <div className="flex flex-col gap-3 h-full">
                                   <div className="relative"><span className={`absolute left-3 top-1/2 -translate-y-1/2 ${ui.textMuted} font-bold text-xs`}>/</span><input type="text" value={editShortcut} onChange={(e) => setEditShortcut(e.target.value)} className={`w-full ${ui.input} rounded-lg pl-7 pr-3 py-2 text-xs outline-none transition-colors`} /></div>
@@ -800,6 +806,52 @@ export default function CRMDashboard() {
                         ))
                       )}
                    </div>
+                 </div>
+               </div>
+             </div>
+          )}
+
+          {/* AUTOMATION MODULE */}
+          {activeView === 'automation' && (
+             <div className="flex flex-col h-full animate-[fade-in_0.3s_ease-out] mr-4 mb-4 mt-6">
+               <div className={`${ui.glass} rounded-3xl p-8 shadow-sm h-full flex flex-col transition-colors duration-300`}>
+                 <div className="flex items-center justify-between mb-8 shrink-0">
+                   <div>
+                     <h2 className={`text-xl font-bold ${ui.textMain} tracking-tight mb-2`}>Automation Engine</h2>
+                     <p className={`text-[11px] ${ui.textMuted} font-medium`}>Configure bot triggers and auto-replies.</p>
+                   </div>
+                   <button className={`px-4 py-2.5 rounded-xl ${t.bg} text-white shadow-md text-sm font-bold flex items-center gap-2 hover:-translate-y-0.5 transition-all`}><Plus className="w-4 h-4"/> New Workflow</button>
+                 </div>
+                 <div className="flex-1 overflow-y-auto custom-scrollbar pr-2">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {automations.map((auto) => (
+                           <div key={auto.id} className={`${ui.card} rounded-3xl p-6 border ${ui.border} shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex flex-col relative`}>
+                              <div className="flex justify-between items-start mb-6">
+                                 <div className={`w-12 h-12 rounded-2xl ${t.sub} flex items-center justify-center`}>
+                                    <auto.icon className={`w-6 h-6 ${t.text}`} />
+                                 </div>
+                                 <button onClick={() => toggleAutomation(auto.id)} className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-300 focus:outline-none ${auto.active ? t.bg : (isDarkMode ? 'bg-slate-700' : 'bg-slate-300')}`}>
+                                     <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition duration-300 ${auto.active ? 'translate-x-6' : 'translate-x-1'}`}/>
+                                 </button>
+                              </div>
+                              <h3 className={`text-base font-bold ${ui.textMain} mb-1`}>{auto.name}</h3>
+                              <p className={`text-[11px] font-bold uppercase tracking-widest ${auto.active ? 'text-emerald-500' : ui.textMuted} mb-6 flex items-center gap-1.5`}>
+                                 {auto.active ? <Power className="w-3 h-3" /> : <PowerOff className="w-3 h-3" />} {auto.active ? 'Active' : 'Paused'}
+                              </p>
+                              <div className={`mt-auto space-y-3 p-4 rounded-2xl ${isDarkMode ? 'bg-slate-900/50' : 'bg-slate-50'} shadow-inner border border-transparent`}>
+                                 <div>
+                                    <p className={`text-[9px] font-bold uppercase tracking-widest ${ui.textMuted} mb-1`}>Trigger</p>
+                                    <p className={`text-xs font-medium ${ui.textMain} flex items-center gap-2`}><Zap className="w-3.5 h-3.5 text-amber-500"/> {auto.trigger}</p>
+                                 </div>
+                                 <div className={`w-full h-px ${ui.border}`}></div>
+                                 <div>
+                                    <p className={`text-[9px] font-bold uppercase tracking-widest ${ui.textMuted} mb-1`}>Action</p>
+                                    <p className={`text-xs font-medium ${ui.textMain} flex items-center gap-2`}><Send className={`w-3.5 h-3.5 ${t.text}`}/> {auto.action}</p>
+                                 </div>
+                              </div>
+                           </div>
+                        ))}
+                    </div>
                  </div>
                </div>
              </div>
@@ -875,7 +927,16 @@ export default function CRMDashboard() {
                             <h3 className={`text-sm font-bold ${ui.textMain} flex items-center gap-2 mb-6`}><Megaphone className={`w-5 h-5 ${ui.textMuted}`} /> New Broadcast</h3>
                             <form onSubmit={handleLaunchCampaign} className="space-y-5">
                                <div className="space-y-2"><label className={`text-[10px] font-bold ${ui.textMuted} uppercase tracking-widest pl-1`}>Name</label><input type="text" value={campaignName} onChange={(e) => setCampaignName(e.target.value)} placeholder="e.g. Flash Sale" className={`w-full ${ui.input} rounded-xl px-4 py-3 text-sm shadow-inner`} /></div>
-                               <div className="space-y-2"><label className={`text-[10px] font-bold ${ui.textMuted} uppercase tracking-widest pl-1`}>Audience</label><select value={campaignAudience} onChange={(e) => setCampaignAudience(e.target.value)} className={`w-full ${ui.input} rounded-xl px-4 py-3 text-sm appearance-none shadow-inner`}><option value="ALL">All Contacts ({leads.length})</option></select></div>
+                               <div className="space-y-2">
+                                  <label className={`text-[10px] font-bold ${ui.textMuted} uppercase tracking-widest pl-1`}>Audience</label>
+                                  <select value={campaignAudience} onChange={(e) => setCampaignAudience(e.target.value)} className={`w-full ${ui.input} rounded-xl px-4 py-3 text-sm appearance-none shadow-inner`}>
+                                     <option value="ALL">All Contacts ({leads.length})</option>
+                                     <option value="ACTIVE">Active Customers ({leads.filter(l => l.status === 'ACTIVE').length})</option>
+                                     <option value="RESOLVED">Resolved Customers ({leads.filter(l => l.status === 'RESOLVED').length})</option>
+                                     <option value="NEW_ORDER">New Orders ({leads.filter(l => l.status === 'NEW_ORDER').length})</option>
+                                     <option value="HANDOFF">Follow-ups ({leads.filter(l => l.status === 'HANDOFF').length})</option>
+                                  </select>
+                               </div>
                                <div className="space-y-2"><label className={`text-[10px] font-bold ${ui.textMuted} uppercase tracking-widest pl-1`}>Template</label><select value={campaignTemplateId} onChange={(e) => setCampaignTemplateId(e.target.value)} className={`w-full ${ui.input} rounded-xl px-4 py-3 text-sm appearance-none shadow-inner`}><option value="" disabled>Select...</option>{quickReplies.map((r: any) => ( <option key={r.id} value={r.id}>/{r.shortcut}</option> ))}</select></div>
                                <button type="submit" className={`w-full ${t.bg} text-white font-bold text-sm px-4 py-3.5 rounded-xl shadow-md transition-all flex items-center justify-center gap-2 hover:-translate-y-0.5 mt-4`}><Send className="w-4 h-4 ml-1" /> Launch</button>
                             </form>
