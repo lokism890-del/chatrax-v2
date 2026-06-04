@@ -1,263 +1,189 @@
-"use client"
+'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import React, { useState } from 'react';
+import { createClient } from '@supabase/supabase-js';
 import { useRouter } from 'next/navigation';
-import { supabase } from '../../lib/supabase'; 
-import { User, Key, AlertTriangle, Loader2 } from 'lucide-react';
+import { Eye, EyeOff } from 'lucide-react';
 
-// ─── AMBIENT STARFIELD ───
-function AnimatedStarfield() {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+// Initialize core Supabase client directly
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+const supabase = createClient(supabaseUrl, supabaseKey);
 
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    let animationFrameId: number;
-    const stars: { 
-      x: number; y: number; radius: number; 
-      vx: number; vy: number; 
-      baseOpacity: number; angle: number; twinkleSpeed: number;
-    }[] = [];
-
-    const initStars = () => {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
-      stars.length = 0; 
-      const numStars = Math.floor((canvas.width * canvas.height) / 1000); 
-
-      for (let i = 0; i < numStars; i++) {
-        stars.push({
-          x: Math.random() * canvas.width,
-          y: Math.random() * canvas.height,
-          radius: Math.random() * 1.2 + 0.2,
-          vx: (Math.random() - 0.5) * 0.08,
-          vy: (Math.random() - 0.5) * 0.08,
-          baseOpacity: Math.random() * 0.5 + 0.2,
-          angle: Math.random() * Math.PI * 2,
-          twinkleSpeed: Math.random() * 0.01 + 0.005
-        });
-      }
-    };
-
-    const animate = () => {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      stars.forEach((star) => {
-        star.angle += star.twinkleSpeed;
-        const currentOpacity = star.baseOpacity + Math.sin(star.angle) * 0.3;
-        
-        ctx.globalAlpha = Math.max(0.1, Math.min(1, currentOpacity));
-        ctx.fillStyle = '#ffffff';
-        ctx.beginPath();
-        ctx.arc(star.x, star.y, star.radius, 0, Math.PI * 2);
-        ctx.fill();
-
-        star.x += star.vx;
-        star.y += star.vy;
-
-        if (star.x < 0) star.x = canvas.width;
-        if (star.x > canvas.width) star.x = 0;
-        if (star.y < 0) star.y = canvas.height;
-        if (star.y > canvas.height) star.y = 0;
-      });
-      animationFrameId = requestAnimationFrame(animate);
-    };
-
-    initStars();
-    animate();
-    window.addEventListener('resize', initStars);
-    return () => {
-      cancelAnimationFrame(animationFrameId);
-      window.removeEventListener('resize', initStars);
-    };
-  }, []);
-
-  return <canvas ref={canvasRef} className="fixed inset-0 -z-20 pointer-events-none opacity-80" />;
-}
-
-// ─── CINEMATIC SHOOTING STARS ───
-function ShootingStars() {
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
-  if (!mounted) return null;
-
-  return (
-    <div className="fixed inset-0 -z-10 pointer-events-none overflow-hidden">
-      <div className="shooting-star" style={{ top: '10%', left: '-10%', animationDelay: '0s' }}></div>
-      <div className="shooting-star" style={{ top: '35%', left: '-10%', animationDelay: '8s' }}></div>
-      <div className="shooting-star" style={{ top: '60%', left: '-10%', animationDelay: '16s' }}></div>
-    </div>
-  );
-}
-
-// ─── SUBTLE NEBULA GLOWS (DARKER) ───
-function NebulaBackground() {
-  return (
-    <div className="fixed inset-0 -z-30 pointer-events-none overflow-hidden">
-      {/* Reduced opacity from /20 to /10 for a deeper, darker feel */}
-      <div className="absolute top-[-20%] left-[-10%] w-[60vw] h-[60vw] rounded-full bg-blue-800/10 blur-[120px] animate-[pulse-slow_15s_ease-in-out_infinite_alternate]" />
-      <div className="absolute bottom-[-20%] right-[-10%] w-[50vw] h-[50vw] rounded-full bg-indigo-800/10 blur-[120px] animate-[pulse-slow_20s_ease-in-out_infinite_alternate-reverse]" />
-    </div>
-  );
-}
-
-export default function Login() {
+export default function LoginPage() {
   const router = useRouter();
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    setError(null);
-    
-    try {
-      const { data, error: authError } = await supabase.auth.signInWithPassword({ email, password });
-      
-      if (authError) {
-        setError(authError.message);
-        setLoading(false);
-      } else if (data?.session) {
-        router.push('/dashboard');
-      } else {
-        setError("Login failed. No session returned.");
-        setLoading(false);
-      }
-    } catch (err: any) {
-      setError(err.message || "Connection failure. Check network.");
+    setErrorMsg(null);
+
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (error) {
+      setErrorMsg(error.message);
       setLoading(false);
+      return;
     }
+
+    // Direct routing to the main dashboard instead of the inbox section
+    router.push('/dashboard');
+    router.refresh();
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-6 relative overflow-x-hidden font-sans">
+    <div className="fixed inset-0 w-screen h-screen overflow-hidden bg-[#0a0a0c] flex items-center justify-center p-4 font-sans antialiased select-none touch-none">
       
-      {/* ─── DEEPER, DARKER GRADIENT BACKGROUND ─── */}
-      <div className="fixed inset-0 -z-50 bg-gradient-to-b from-[#020617] via-[#0f172a] to-[#1e1b4b]" />
+      {/* Absolute static mesh canvas layer providing the smooth backdrop transition */}
+      <div className="absolute inset-0 w-full h-full bg-[radial-gradient(ellipse_at_center,_#16171b_0%,_#090a0c_70%,_#030304_100%)] pointer-events-none z-0" />
+      
+      {/* Luxury Muted Ambient Lighting Overlays */}
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-indigo-500/[0.015] rounded-full blur-[140px] pointer-events-none z-0" />
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] bg-white/[0.01] rounded-full blur-[100px] pointer-events-none z-0" />
 
-      <style dangerouslySetInnerHTML={{__html: `
-        input:-webkit-autofill,
-        input:-webkit-autofill:hover, 
-        input:-webkit-autofill:focus, 
-        input:-webkit-autofill:active {
-            -webkit-box-shadow: 0 0 0 1000px transparent inset !important;
-            -webkit-text-fill-color: #ffffff !important;
-            transition: background-color 5000s ease-in-out 0s !important;
-            caret-color: #10b981 !important;
-        }
-
-        @keyframes pulse-slow {
-          0% { transform: scale(0.9); opacity: 0.6; }
-          100% { transform: scale(1.1); opacity: 1; }
-        }
-
-        .shooting-star {
-          position: absolute;
-          width: 4px;
-          height: 4px;
-          background: #ffffff;
-          border-radius: 50%;
-          box-shadow: 0 0 15px 3px rgba(255, 255, 255, 0.8), 0 0 30px 6px rgba(16, 185, 129, 0.4);
-          animation: shoot 20s linear infinite;
-          opacity: 0;
-        }
-
-        .shooting-star::after {
-          content: '';
-          position: absolute;
-          top: 50%;
-          right: 50%;
-          transform: translateY(-50%);
-          width: 120px;
-          height: 1.5px;
-          background: linear-gradient(to left, rgba(255, 255, 255, 0.6), transparent);
-          border-radius: 999px;
-        }
-
-        @keyframes shoot {
-          0% { transform: translate(0, 0) rotate(15deg); opacity: 0; }
-          2% { opacity: 1; }
-          12% { transform: translate(120vw, 35vh) rotate(15deg); opacity: 0; }
-          100% { transform: translate(120vw, 35vh) rotate(15deg); opacity: 0; }
-        }
-
-        @keyframes sweep {
-          0% { transform: translateX(-100%) skewX(-15deg); }
-          100% { transform: translateX(200%) skewX(-15deg); }
-        }
-
-        @keyframes float-logo {
-          0%, 100% { transform: translateY(0px); }
-          50% { transform: translateY(-8px); }
-        }
-      `}} />
-
-      <NebulaBackground />
-      <AnimatedStarfield />
-      <ShootingStars />
-
-      <div className="w-full max-w-[360px] relative z-20 flex flex-col items-center backdrop-blur-2xl p-10 rounded-[2.5rem] border border-white/10 bg-[#0f172a]/50 shadow-[0_30px_80px_rgba(0,0,0,0.8)]">
+      {/* Floating Application Window Box with Isolated Layout Containers */}
+      <div className="w-full max-w-[900px] h-[600px] bg-gradient-to-b from-[#242529] to-[#1c1d20] rounded-[2rem] shadow-[0_30px_80px_-20px_rgba(0,0,0,0.85)] flex overflow-hidden relative border border-white/[0.04] backdrop-blur-xl z-10 animate-in fade-in zoom-in-95 duration-500 ease-out">
         
-        <div className="relative w-[90px] h-[90px] mb-4 flex items-center justify-center animate-[float-logo_6s_ease-in-out_infinite]">
-          <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-[0_0_20px_rgba(16,185,129,0.5)]" xmlns="http://www.w3.org/2000/svg">
-            <defs>
-              <linearGradient id="bubble-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stopColor="#34d399" />
-                <stop offset="100%" stopColor="#059669" />
-              </linearGradient>
-            </defs>
-            <path d="M50 10 C 27.9 10 10 27.9 10 50 C 10 58.5 12.6 66.4 17.1 73 L 12 88 L 27.4 83.9 C 34.1 88.5 41.8 90 50 90 C 72.1 90 90 72.1 90 50 C 90 27.9 72.1 10 50 10 Z" fill="url(#bubble-grad)" />
-            <path d="M 32 50 L 45 63 L 70 32" fill="none" stroke="#0f172a" strokeWidth="9" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
+        {/* Dynamic Sequential Window Controls (Lights up one-by-one slowly) */}
+        <div className="absolute top-7 left-7 flex gap-2 z-20">
+          <div className="w-2.5 h-2.5 rounded-full bg-white/20 border border-white/[0.01] animate-[pulse_3s_infinite_ease-in-out] shadow-[0_0_8px_rgba(255,255,255,0.1)]"></div>
+          <div className="w-2.5 h-2.5 rounded-full bg-white/20 border border-white/[0.01] animate-[pulse_3s_infinite_1s_ease-in-out] shadow-[0_0_8px_rgba(255,255,255,0.1)]"></div>
+          <div className="w-2.5 h-2.5 rounded-full bg-white/20 border border-white/[0.01] animate-[pulse_3s_infinite_2s_ease-in-out] shadow-[0_0_8px_rgba(255,255,255,0.1)]"></div>
         </div>
 
-        <h1 className="text-[36px] font-bold text-white tracking-tight mb-10 drop-shadow-xl font-sans">
-          ChatRax
-        </h1>
-
-        {error && (
-          <div className="mb-6 w-full p-3 bg-red-500/10 border border-red-500/30 rounded-xl flex items-center justify-center gap-2 text-red-400 text-[10px] font-black uppercase tracking-widest animate-pulse text-center">
-            <AlertTriangle className="w-4 h-4 shrink-0" /> 
-            <span>{error}</span>
-          </div>
-        )}
-
-        <form onSubmit={handleLogin} className="w-full space-y-6">
-          <div className="relative flex items-center border-b border-[#10b981]/30 focus-within:border-[#10b981] transition-colors duration-500 pb-2 group">
-            <User className="w-4 h-4 text-[#10b981]/50 group-focus-within:text-[#10b981] mr-4 shrink-0 transition-colors duration-500" strokeWidth={2.5} />
-            <input type="email" name="email" value={email} onChange={(e) => setEmail(e.target.value)} required
-              className="w-full bg-transparent text-white placeholder-zinc-500 text-sm focus:outline-none tracking-wide" placeholder="email address" />
-          </div>
-
-          <div className="relative flex items-center border-b border-[#10b981]/30 focus-within:border-[#10b981] transition-colors duration-500 pb-2 group">
-            <Key className="w-4 h-4 text-[#10b981]/50 group-focus-within:text-[#10b981] mr-4 shrink-0 transition-colors duration-500" strokeWidth={2.5} />
-            <input type="password" name="password" value={password} onChange={(e) => setPassword(e.target.value)} required
-              className="w-full bg-transparent text-white placeholder-zinc-500 text-sm focus:outline-none tracking-wide" placeholder="password" />
-          </div>
-
-          <div className="pt-6">
-            <button type="submit" disabled={loading}
-              className="relative overflow-hidden w-full bg-[#10b981] hover:bg-[#059669] text-white font-bold text-xs tracking-widest py-4 rounded-xl shadow-[0_8px_25px_rgba(16,185,129,0.25)] transition-all duration-300 hover:shadow-[0_15px_35px_rgba(16,185,129,0.4)] hover:-translate-y-0.5 active:translate-y-1 active:scale-[0.98] disabled:opacity-50 flex items-center justify-center group"
-            >
-              <div className="absolute inset-0 w-[50%] h-full bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-[150%] group-hover:animate-[sweep_2s_ease-in-out_infinite]" />
-              <span className="relative z-10 flex items-center gap-2 drop-shadow-md">
-                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'LOG IN'}
-              </span>
-            </button>
-          </div>
+        {/* LEFT COMPONENT LAYER: FORM CONTENT & AUTHORIZATION */}
+        <div className="w-1/2 h-full flex flex-col pt-24 px-14 pb-12 relative z-10">
           
-          <div className="text-center pt-2">
-              <button type="button" className="group relative text-[9px] font-bold uppercase tracking-[0.15em] text-zinc-500 hover:text-white transition-colors duration-500 pb-1">
-                  Forgotten password?
-                  <span className="absolute left-1/2 bottom-0 w-0 h-[1px] bg-[#10b981] transition-all duration-500 ease-out group-hover:w-full group-hover:left-0"></span>
+          <h1 className="text-[28px] font-semibold text-white/95 mb-9 tracking-tight">
+            Sign in
+          </h1>
+
+          {errorMsg && (
+            <div className="mb-4 text-red-400 text-xs bg-red-950/20 px-3 py-2.5 rounded-xl border border-red-900/30">
+              {errorMsg}
+            </div>
+          )}
+
+          <form onSubmit={handleLogin} className="flex flex-col flex-grow">
+            
+            {/* Input Segment: Business Email */}
+            <div className="mb-5">
+              <label htmlFor="email-field" className="text-[11px] text-white/40 mb-2 block font-medium tracking-wide">
+                Your email
+              </label>
+              <input
+                id="email-field"
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="name@company.com"
+                className="w-full bg-[#151619] text-white/90 text-sm rounded-xl px-4 py-3 border border-white/[0.01] focus:border-white/10 focus:ring-4 focus:ring-white/[0.01] focus:outline-none transition-all placeholder-white/20 font-light select-text"
+              />
+            </div>
+
+            {/* Input Segment: Security Password */}
+            <div className="mb-8">
+              <div className="flex justify-between items-end mb-2">
+                <label htmlFor="password-field" className="text-[11px] text-white/40 block font-medium tracking-wide">
+                  Password
+                </label>
+                <button type="button" className="text-[11px] text-white/40 hover:text-white/80 transition-colors">
+                  Forget password?
+                </button>
+              </div>
+              
+              <div className="relative">
+                <input
+                  id="password-field"
+                  type={showPassword ? "text" : "password"}
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full bg-[#151619] text-white/90 text-sm rounded-xl pl-4 pr-10 py-3 border border-white/[0.01] focus:border-white/10 focus:ring-4 focus:ring-white/[0.01] focus:outline-none transition-all placeholder-white/20 font-light select-text"
+                />
+                <button 
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-white/30 hover:text-white/70 transition-colors"
+                >
+                  {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                </button>
+              </div>
+            </div>
+
+            {/* Matte Action Button with Radial Sheen */}
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full bg-gradient-to-b from-[#4a4d55] to-[#36373d] text-white/90 text-[13px] font-medium rounded-xl py-3.5 hover:from-[#545761] hover:to-[#3e3f46] transition-all shadow-[0_4px_25px_rgba(0,0,0,0.4)] flex justify-center items-center active:scale-[0.99] disabled:opacity-50 border border-white/[0.02]"
+            >
+              {loading ? (
+                <div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              ) : (
+                'Sign in'
+              )}
+            </button>
+
+            {/* Account Redirection Footer */}
+            <div className="mt-auto text-center">
+              <span className="text-[11px] text-white/30">Don't have an account? </span>
+              <button type="button" className="text-[11px] text-white/70 hover:text-white hover:underline transition-all">
+                Sign up
               </button>
+            </div>
+
+          </form>
+        </div>
+
+        {/* RIGHT COMPONENT LAYER: ARTWORK INSIDE SOLID ONYX SHIELD */}
+        <div className="w-1/2 h-full p-4">
+          <div className="w-full h-full bg-[#050506] rounded-[1.5rem] relative overflow-hidden flex flex-col justify-end pb-8 shadow-[inner_0_4px_30px_rgba(0,0,0,0.9)] border border-white/[0.015]">
+            
+            {/* Fine Geometric Starfield Mapping Layout */}
+            <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+              
+              {/* Primary Gas Giant Orb Effect */}
+              <div className="absolute w-[90px] h-[90px] rounded-full bg-gradient-to-b from-[#a4b5c7] via-[#6581a0] to-transparent shadow-[0_-12px_40px_rgba(147,169,192,0.22)] mt-8" />
+              
+              {/* Remote Satellite Object */}
+              <div className="absolute top-[25%] right-[20%] w-[16px] h-[16px] rounded-full bg-gradient-to-b from-[#7ca1c7] to-[#1e2a38] shadow-[0_0_15px_rgba(124,161,199,0.25)]" />
+
+              {/* Slow Moving Cosmic Stream Tracks Left */}
+              <div className="absolute top-[20%] left-[30%] w-[1px] h-[120px] bg-gradient-to-b from-white/60 to-transparent opacity-40" />
+              <div className="absolute top-[20%] left-[30%] w-[2.5px] h-[2.5px] bg-white rounded-full translate-x-[-0.75px] shadow-[0_0_6px_#fff]" />
+
+              {/* Slow Moving Cosmic Stream Tracks Right */}
+              <div className="absolute top-[45%] right-[25%] w-[1px] h-[100px] bg-gradient-to-b from-white/50 to-transparent opacity-30" />
+              <div className="absolute top-[45%] right-[25%] w-[2.5px] h-[2.5px] bg-white rounded-full translate-x-[-0.75px] shadow-[0_0_6px_#fff]" />
+
+              {/* Star Spatial Markers */}
+              <div className="absolute top-[40%] left-[20%] w-[1.5px] h-[1.5px] bg-white rounded-full opacity-30" />
+              <div className="absolute top-[35%] right-[35%] w-[1.5px] h-[1.5px] bg-white rounded-full opacity-40" />
+              <div className="absolute bottom-[35%] left-[35%] w-[1.5px] h-[1.5px] bg-white rounded-full opacity-20" />
+              <div className="absolute bottom-[25%] right-[40%] w-[1px] h-[1px] bg-white rounded-full opacity-50" />
+            </div>
+
+            {/* Branded Identity Core Wordmark */}
+            <div className="relative z-10 w-full flex justify-center items-center">
+              <span className="text-white/60 text-xs font-semibold tracking-[0.25em] lowercase select-none pl-[0.25em]">
+                chatrax
+              </span>
+            </div>
+
           </div>
-        </form>
+        </div>
+
       </div>
     </div>
   );

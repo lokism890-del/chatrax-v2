@@ -51,13 +51,6 @@ const THEMES: Record<string, ThemeColor> = {
   silver: { name: 'Silver', bg: 'bg-gray-500', text: 'text-gray-400', grad: 'from-gray-400 to-gray-600', sub: 'bg-gray-500/10', border: 'border-gray-500/20', borderActive: 'border-gray-500/50' }
 };
 
-const COLUMN_CONFIG: Record<string, { icon: any, hex: string, label: string }> = {
-  'NEW_ORDER': { icon: ShoppingBag, hex: '#10b981', label: 'New Orders' },
-  'HANDOFF': { icon: UserCheck, hex: '#f59e0b', label: 'Handoffs' },
-  'ACTIVE': { icon: Activity, hex: '#0ea5e9', label: 'Active Chats' },
-  'RESOLVED': { icon: ShieldCheck, hex: '#84cc16', label: 'Resolved' }
-};
-
 // ─── BACKGROUND EFFECTS ───
 const BgEffects = memo(({ isDark }: { isDark: boolean }) => (
   <div className={`fixed inset-0 -z-30 pointer-events-none overflow-hidden transition-colors duration-700 ${isDark ? 'bg-[#0B0F19]' : 'bg-[#f4f7f9]'}`}>
@@ -71,10 +64,11 @@ BgEffects.displayName = "BgEffects";
 // ─── MAIN COMPONENT ───
 export default function CRMDashboard() {
   const router = useRouter();
-  // Change this from true to false
-const SIMULATE_MESSAGING = false;
+  const SIMULATE_MESSAGING = false;
   const [isMounted, setIsMounted] = useState(false);
-  const [activeView, setActiveView] = useState('inbox'); 
+  
+  // FIXED REDIRECT LOCATION PATH VALUE - Set target state entry to dashboard view explicitly
+  const [activeView, setActiveView] = useState('dashboard'); 
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [userRole, setUserRole] = useState<'ADMIN' | 'AGENT'>('ADMIN');
   
@@ -109,7 +103,7 @@ const SIMULATE_MESSAGING = false;
 
   // Tools & Modules State
   const [settings, setSettings] = useState({ 
-    metaToken: '', metaPhoneId: '', shopifyDomain: '', adminName: 'Agent', adminEmail: '', 
+    metaPhoneId: '', metaToken: '', shopifyDomain: '', adminName: 'Agent', adminEmail: '', 
     audioAlerts: true, outboundWebhookUrl: '', workspaceName: 'ChatRax Pro', accentColor: 'emerald' 
   });
   
@@ -195,7 +189,6 @@ const SIMULATE_MESSAGING = false;
 
   const newLeads = leads.filter((l: any) => l.status === 'NEW_ORDER');
   const resolutionRate = leads.length > 0 ? Math.round(((groupedLeads['RESOLVED']?.length || 0) / leads.length) * 100) : 0;
-  const totalMessagesUsed = totalSent + totalReceived;
 
   // ─── SUPABASE API & EFFECTS ───
   const fetchAuditLogs = async () => { 
@@ -412,11 +405,11 @@ const SIMULATE_MESSAGING = false;
 
   if (!isMounted) return null;
 
-  // ─── MAIN RETURN (FULLY FLATTENED) ───
+  // ─── MAIN RETURN (FULLY BALANCED & FLATTENED) ───
   return (
     <div className={`flex h-screen w-screen font-sans ${ui.bgMain} overflow-hidden selection:bg-amber-500/30 transition-colors duration-500`}>
       
-      {/* Background & Scrolbar Overrides */}
+      {/* Background & Scrollbar Overrides */}
       <BgEffects isDark={isDarkMode} />
       <style dangerouslySetInnerHTML={{__html: `
         .hover-scroll::-webkit-scrollbar { width: 0px; height: 0px; background: transparent; transition: all 0.3s; }
@@ -663,7 +656,7 @@ const SIMULATE_MESSAGING = false;
                     {/* RIGHT: CUSTOMER PROFILE */}
                     <div className={`hidden xl:flex w-72 flex-col border-l ${ui.border} ${ui.bgSidebar} overflow-y-auto hover-scroll shrink-0`}>
                       <div className={`p-6 border-b ${ui.border} text-center`}>
-                        <div className={`w-16 h-16 mx-auto rounded-full ${t.bg} text-white flex items-center justify-center text-2xl font-black mb-3 shadow-lg`}>{selectedLead.full_name?.charAt(0) || <User/>}</div>
+                        <div className={`w-16 h-16 mx-auto rounded-full ${t.bg} text-white flex items-center justify-center text-2xl font-black mb-3 shadow-lg`}>{selectedLead.full_name?.charAt(0) || <User className="w-6 h-6"/>}</div>
                         <h3 className={`text-base font-bold ${ui.textMain}`}>{selectedLead.full_name || 'Unknown'}</h3>
                         <p className={`text-xs ${ui.textMuted} mt-1 flex items-center justify-center gap-1`}><Flame className="w-3 h-3 text-amber-500"/> Lead Score: {selectedLead.status === 'NEW_ORDER' ? 'Hot' : 'Warm'}</p>
                       </div>
@@ -687,7 +680,7 @@ const SIMULATE_MESSAGING = false;
                             {showTagInput ? (
                                <form onSubmit={handleAddTagSubmit} className="flex items-center">
                                   <input autoFocus type="text" value={newTag} onChange={e=>setNewTag(e.target.value)} onBlur={handleAddTagSubmit} placeholder="Add tag..." className={`w-20 ${ui.input} text-[10px] px-2 py-1 rounded-md outline-none focus:border-amber-500`} />
-                               </form>
+                                </form>
                             ) : (
                                <button onClick={() => setShowTagInput(true)} className={`px-2.5 py-1 rounded-md border border-dashed ${ui.border} text-[10px] font-bold ${ui.textMuted} hover:border-amber-500 hover:${ui.accentText} transition-colors`}><Plus className="w-3 h-3"/></button>
                             )}
@@ -744,7 +737,7 @@ const SIMULATE_MESSAGING = false;
                     {filteredLeads.map((contact: any) => (
                       <div key={contact.id} onClick={() => { setSelectedLead(contact); setActiveView('inbox'); }} className={`${ui.card} p-6 rounded-2xl border ${ui.border} hover:-translate-y-1 hover:shadow-xl transition-all duration-300 group cursor-pointer shadow-sm`}>
                         <div className="flex justify-between items-start mb-4">
-                          <div className={`w-12 h-12 rounded-2xl ${t.sub} flex items-center justify-center font-bold text-lg ${t.text}`}>{contact.full_name?.charAt(0) || <User/>}</div>
+                          <div className={`w-12 h-12 rounded-2xl ${t.sub} flex items-center justify-center font-bold text-lg ${t.text}`}>{contact.full_name?.charAt(0) || <User className="w-5 h-5"/>}</div>
                           <button className={`p-1.5 rounded-lg ${ui.textMuted} ${ui.hover}`}><MoreVertical className="w-4 h-4"/></button>
                         </div>
                         <h3 className={`text-sm font-bold ${ui.textMain} mb-1 truncate`}>{contact.full_name || 'Store Customer'}</h3>
@@ -863,12 +856,6 @@ const SIMULATE_MESSAGING = false;
           {activeView === 'team' && (
             <div className="flex flex-col h-full animate-[fade-in_0.3s_ease-out] mr-4 mb-4 mt-6">
               <div className={`${ui.glass} rounded-3xl p-8 shadow-sm h-full flex flex-col transition-colors duration-300`}>
-                <div className="flex items-center justify-between mb-8 shrink-0">
-                  <div>
-                    <h2 className={`text-xl font-bold ${ui.textMain} tracking-tight mb-2`}>Team Management</h2>
-                    <p className={`text-[11px] ${ui.textMuted} font-medium`}>Monitor agent performance and routing.</p>
-                  </div>
-                </div>
                 <div className="flex-1 overflow-y-auto custom-scrollbar pr-2">
                    <div className={`${ui.card} rounded-3xl p-8 border ${ui.border} shadow-sm`}>
                      <div className="flex items-center justify-between mb-8">
